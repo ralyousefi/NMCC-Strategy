@@ -112,7 +112,7 @@ def parse_date(date_str):
         return datetime.today().date()
 
 # ---------------------------------------------------------
-# 3. نظام تسجيل الدخول (مع تنظيف البيانات)
+# 3. نظام تسجيل الدخول
 # ---------------------------------------------------------
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
@@ -128,11 +128,8 @@ def login():
             try:
                 sh = get_sheet_connection()
                 users_df = pd.DataFrame(sh.worksheet("Users").get_all_records())
-                
-                # تنظيف اسم المستخدم
                 users_df['username'] = users_df['username'].astype(str).str.strip()
-                
-                # البحث عن المستخدم
+                # تنظيف البيانات
                 user = users_df[users_df['username'] == username.strip()]
                 
                 if not user.empty and str(user.iloc[0]['password']) == str(password):
@@ -238,24 +235,24 @@ def admin_view(sh, user_name):
                     "متأخر (أحمر)": "#d62728"
                 }).fillna("grey")
 
-                # 1. الأعمدة (القيم الفعلية)
                 fig.add_trace(go.Bar(
                     x=edited_kpi['KPI_Name'], 
                     y=edited_kpi['Actual'], 
                     name='الفعلي', 
                     marker_color=status_colors,
-                    text=edited_kpi['Actual'],     # الرقم داخل البار
-                    textposition='inside',         # وضع النص داخل البار
-                    width=0.5                      # عرض البار متوسط لإعطاء مسافات
+                    text=edited_kpi['Actual'],     
+                    textposition='inside',         
+                    width=0.5                      
                 ))
                 
-                # 2. المستهدف (خط أسود فقط)
                 fig.add_trace(go.Scatter(
                     x=edited_kpi['KPI_Name'], 
                     y=edited_kpi['Target'], 
-                    mode='markers',                # حذفنا text
+                    mode='markers+text',           
                     name='المستهدف', 
-                    marker=dict(symbol='line-ew', size=50, color='black', line=dict(width=3)), 
+                    marker=dict(symbol='line-ew', size=50, color='black', line=dict(width=3)),
+                    text=edited_kpi['Target'],     
+                    textposition='top center'      
                 ))
 
                 fig.update_layout(
@@ -401,7 +398,7 @@ def owner_view(sh, user_name, my_initiatives_str):
         st.error(f"خطأ: {e}")
 
 # ---------------------------------------------------------
-# 5. التشغيل (مع معالجة الأخطاء)
+# 5. التشغيل
 # ---------------------------------------------------------
 if not st.session_state['logged_in']:
     login()
@@ -414,28 +411,15 @@ else:
             
     try:
         connection = get_sheet_connection()
-        # تنظيف الدور من المسافات وجعله بأحرف قياسية
-        # مثلاً: " admin " تصبح "Admin"
-        raw_role = str(st.session_state['user_info']['role'])
-        role = raw_role.strip().title() 
+        # تنظيف الدور من المسافات والأحرف الكبيرة/الصغيرة لضمان التطابق
+        role = str(st.session_state['user_info']['role']).strip().title()
         
         if role == 'Admin':
             admin_view(connection, st.session_state['user_info']['name'])
         elif role == 'Owner':
             owner_view(connection, st.session_state['user_info']['name'], st.session_state['user_info']['assigned_initiative'])
         else:
-            # رسالة خطأ واضحة بدلاً من الشاشة السوداء
-            st.error(f"""
-            ⚠️ **مشكلة في الصلاحيات!**
-            
-            الدور المسجل للمستخدم: `{raw_role}`
-            
-            يرجى التأكد من ملف الإكسل (ورقة Users) أن عمود **role** يحتوي على:
-            - **Admin** (للمدير)
-            - **Owner** (للموظف)
-            
-            بدون مسافات إضافية.
-            """)
+            st.error(f"⚠️ خطأ في الصلاحيات: الدور '{role}' غير معروف في النظام. يرجى مراجعة المسؤول.")
             
     except Exception as e:
         st.error(f"خطأ غير متوقع: {e}")
@@ -443,6 +427,6 @@ else:
 # --- Footer: Version Number ---
 st.markdown("""
 <div class="footer">
-    System Version: 14.3 (Anti-BlackScreen Update)
+    System Version: 14.1
 </div>
 """, unsafe_allow_html=True)
