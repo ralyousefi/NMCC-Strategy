@@ -19,7 +19,6 @@ st.markdown("""
     h1, h2, h3, h4, p, div, input, select, textarea, .stSelectbox, .stNumberInput {text-align: right;}
     .stDataFrame {direction: rtl;}
     
-    /* تنسيق صندوق النشاط */
     .activity-box {
         background-color: #f0f8ff;
         padding: 20px;
@@ -32,7 +31,6 @@ st.markdown("""
         box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     }
     
-    /* تنسيق تنبيه الإدارة */
     .admin-alert-box {
         background-color: #fff3cd;
         color: #856404;
@@ -51,7 +49,6 @@ st.markdown("""
         font-weight: bold;
     }
     
-    /* تنسيق التذييل (Footer) */
     .footer {
         position: fixed;
         left: 0;
@@ -69,17 +66,42 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 2. إعدادات الاتصال
+# 2. إعدادات الاتصال (تم التعديل لتعمل أونلاين ومحلياً)
 # ---------------------------------------------------------
 SHEET_ID = "11tKfYa-Sqa96wDwQvMvChgRWaxgMRAWAIvul7p27ayY"
 
 def get_creds():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    
+    # 1. المحاولة الأولى: القراءة من Streamlit Secrets (للموقع أونلاين)
+    # نستخدم try-except لتجنب الأخطاء إذا لم تكن الأسرار موجودة
+    try:
+        if st.secrets is not None and 'gcp_service_account' in st.secrets:
+            # تحويل الأسرار إلى قاموس بايثون
+            creds_dict = dict(st.secrets["gcp_service_account"])
+            
+            # إصلاح مشكلة المسافات في المفتاح الخاص (Private Key Fix)
+            # هذه أهم خطوة لكي يعمل المفتاح أونلاين
+            if 'private_key' in creds_dict:
+                creds_dict['private_key'] = creds_dict['private_key'].replace('\\n', '\n')
+
+            return ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    except Exception:
+        pass # إذا فشلت قراءة الأسرار، انتقل للمحاولة الثانية بصمت
+
+    # 2. المحاولة الثانية: القراءة من ملف محلي (للعمل داخل Codespace)
     json_key_file = "credentials.json"
-    if not os.path.exists(json_key_file):
-        st.error("ملف credentials.json غير موجود!")
-        st.stop()
-    return ServiceAccountCredentials.from_json_keyfile_name(json_key_file, scope)
+    if os.path.exists(json_key_file):
+        return ServiceAccountCredentials.from_json_keyfile_name(json_key_file, scope)
+        
+    # 3. إذا فشلت المحاولتان
+    st.error("""
+    ⚠️ **خطأ في الاتصال!**
+    لم يتم العثور على بيانات الاعتماد.
+    - إذا كنت على الموقع: تأكد من إعداد Secrets في لوحة التحكم.
+    - إذا كنت في Codespace: تأكد من وجود ملف credentials.json.
+    """)
+    st.stop()
 
 def get_sheet_connection():
     creds = get_creds()
@@ -248,11 +270,9 @@ def admin_view(sh, user_name):
                 fig.add_trace(go.Scatter(
                     x=edited_kpi['KPI_Name'], 
                     y=edited_kpi['Target'], 
-                    mode='markers+text',           
+                    mode='markers',                
                     name='المستهدف', 
-                    marker=dict(symbol='line-ew', size=50, color='black', line=dict(width=3)),
-                    text=edited_kpi['Target'],     
-                    textposition='top center'      
+                    marker=dict(symbol='line-ew', size=50, color='black', line=dict(width=3)), 
                 ))
 
                 fig.update_layout(
@@ -427,6 +447,6 @@ else:
 # --- Footer: Version Number ---
 st.markdown("""
 <div class="footer">
-    System Version: 14.1
+    System Version: 14.2 (Hybrid: Online & Local)
 </div>
 """, unsafe_allow_html=True)
