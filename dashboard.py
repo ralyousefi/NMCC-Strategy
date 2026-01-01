@@ -302,16 +302,16 @@ def display_kpi_layout(df_all):
     
     with col1:
         # المجموعة الأولى (يمين)
-        plot_group_barchart(g1, "مجموعة QI4SD")
+        plot_group_barchart(g1, "QI4SD")
         
     with col2:
         # المجموعة الثانية (يسار)
-        plot_group_barchart(g2, "مجموعة البحث والتطوير")
+        plot_group_barchart(g2, "البحث والتطوير")
         
     # --- الصف الثاني: عمود كامل ---
     st.markdown("---")
     # المجموعة الثالثة (أسفل)
-    plot_group_barchart(g3, "مجموعة الكفاءة التشغيلية")
+    plot_group_barchart(g3, "الكفاءة التشغيلية")
 
 # ================================
 # واجهة المدير (Admin)
@@ -791,3 +791,4 @@ st.markdown("""
     System Version: 27.0 (NMCC - 2026: Categorized Bar Charts Layout)
 </div>
 """, unsafe_allow_html=True)
+
