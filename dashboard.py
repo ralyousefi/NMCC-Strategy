@@ -68,6 +68,17 @@ st.markdown("""
         font-size: 16px;
     }
 
+    .admin-alert-box {
+        background-color: #fff3cd;
+        color: #856404;
+        padding: 15px;
+        border-radius: 8px;
+        border: 1px solid #ffeeba;
+        border-right: 5px solid #ffc107;
+        margin-bottom: 20px;
+        font-weight: bold;
+    }
+
     .footer {
         position: fixed;
         left: 0;
@@ -181,36 +192,87 @@ def login():
 # 4. واجهات المستخدمين
 # ---------------------------------------------------------
 
-def draw_kpi_chart(df):
-    def get_status(row):
-        target, actual = row['Target'], row['Actual']
-        direction = row.get('Direction', 'تصاعدي') 
-        if direction == 'تنازلي': 
-            return "متقدم (أزرق)" if actual < target else "متحقق (أخضر)" if actual == target else "متأخر (أحمر)"
-        else: 
-            return "متقدم (أزرق)" if actual > target else "متحقق (أخضر)" if actual == target else "متأخر (أحمر)"
+# --- دالة رسم Enhanced Scorecard الجديدة ---
+def draw_kpi_scorecard(df):
+    if df.empty:
+        st.info("لا توجد بيانات للعرض.")
+        return
 
-    df['Status'] = df.apply(get_status, axis=1)
+    # 1. حساب حالة المؤشر والتقدم (Calculation Logic)
+    def calculate_metrics(row):
+        target = row['Target']
+        actual = row['Actual']
+        direction = str(row.get('Direction', 'تصاعدي')).strip()
+        
+        # تحديد الحالة واللون
+        status_icon = "⚪"
+        progress_val = 0.0
+        
+        if direction == 'تنازلي':
+            # في التنازلي: الأقل هو الأفضل
+            # إذا كان الفعلي أقل من المستهدف -> ممتاز (أخضر)
+            if actual <= target:
+                status_icon = "🟢" # متحقق/متقدم
+                progress_val = 1.0 # 100%
+            else:
+                status_icon = "🔴" # متأخر
+                # حساب نسبة عكسية تقريبية: كلما زاد عن الهدف قلت النسبة
+                try:
+                    # معادلة تقريبية للتوضيح: (Target / Actual)
+                    progress_val = target / actual if actual != 0 else 0
+                except:
+                    progress_val = 0
+        else:
+            # في التصاعدي: الأكثر هو الأفضل
+            if actual >= target:
+                status_icon = "🟢" # متحقق/متقدم (أخضر) - يمكن استخدام الأزرق للمتقدم جداً
+                if actual > target: status_icon = "🔵" 
+                progress_val = 1.0
+            else:
+                status_icon = "🔴" # متأخر
+                try:
+                    progress_val = actual / target if target != 0 else 0
+                except:
+                    progress_val = 0
+        
+        return pd.Series([status_icon, progress_val])
+
+    df[['Status_Icon', 'Progress_Ratio']] = df.apply(calculate_metrics, axis=1)
+
+    # 2. عرض الجدول المحسن (Scorecard View)
+    st.markdown("### 📋 بطاقة الأداء (Scorecard)")
     
-    fig = go.Figure()
-    status_colors = df['Status'].map({
-        "متقدم (أزرق)": "#1f77b4", "متحقق (أخضر)": "#2ca02c", "متأخر (أحمر)": "#d62728"
-    }).fillna("grey")
-
-    fig.add_trace(go.Bar(
-        x=df['KPI_Name'], y=df['Actual'], name='الفعلي', 
-        marker_color=status_colors, text=df['Actual'],       
-        textposition='inside', width=0.5                        
-    ))
-    fig.add_trace(go.Scatter(
-        x=df['KPI_Name'], y=df['Target'], mode='markers',                  
-        name='المستهدف', marker=dict(symbol='line-ew', size=50, color='black', line=dict(width=3)), 
-    ))
-    fig.update_layout(
-        title="مقارنة الأداء (الفعلي vs المستهدف)", xaxis_title="المؤشر", yaxis_title="القيمة",
-        barmode='overlay', bargap=0.4, legend=dict(orientation="h", y=1.1, x=0.5, xanchor='center')
+    # تنسيق البيانات للعرض
+    # نقوم بإنشاء DataFrame جديد مخصص للعرض فقط
+    display_df = df.copy()
+    
+    # استخدام column_config لعرض شريط التقدم والأيقونات
+    st.dataframe(
+        display_df,
+        column_order=["Status_Icon", "KPI_Name", "Unit", "Target", "Actual", "Progress_Ratio", "Owner"],
+        column_config={
+            "Status_Icon": st.column_config.TextColumn(
+                "الحالة", 
+                help="🔵 متقدم | 🟢 متحقق | 🔴 متأخر",
+                width="small"
+            ),
+            "KPI_Name": st.column_config.TextColumn("المؤشر", width="large"),
+            "Unit": st.column_config.TextColumn("الوحدة", width="small"),
+            "Target": st.column_config.NumberColumn("المستهدف", format="%.2f"),
+            "Actual": st.column_config.NumberColumn("الفعلي", format="%.2f"),
+            "Progress_Ratio": st.column_config.ProgressColumn(
+                "نسبة الأداء",
+                help="شريط يوضح مدى القرب من تحقيق الهدف",
+                format="%.0f%%",
+                min_value=0,
+                max_value=1,
+            ),
+            "Owner": st.column_config.TextColumn("المسؤول", width="medium"),
+        },
+        hide_index=True,
+        use_container_width=True,
+        height=500 # ارتفاع ثابت للقائمة الطويلة
     )
-    st.plotly_chart(fig, use_container_width=True)
 
 # ================================
 # واجهة المدير (Admin)
@@ -241,7 +303,7 @@ def admin_view(sh, user_name):
     except Exception as e:
         st.error(f"خطأ في تحميل الملخص: {e}")
 
-    tab1, tab2 = st.tabs(["📋 تفاصيل المبادرات", "📊 مؤشرات الأداء (KPIs)"])
+    tab1, tab2 = st.tabs(["📋 تفاصيل المبادرات", "📊 مؤشرات الأداء (Scorecard)"])
     
     # --- تبويب المبادرات ---
     with tab1:
@@ -315,7 +377,7 @@ def admin_view(sh, user_name):
         except Exception as e:
             st.error(f"خطأ تحميل: {e}")
 
-    # --- تبويب المؤشرات ---
+    # --- تبويب المؤشرات (Scorecard Mode) ---
     with tab2:
         try:
             ws_kpi = sh.worksheet("KPIs")
@@ -327,9 +389,13 @@ def admin_view(sh, user_name):
             df_kpi['Target'] = df_kpi['Target'].apply(safe_float)
             df_kpi['Actual'] = df_kpi['Actual'].apply(safe_float)
             
-            st.markdown("#### ✏️ إدارة المؤشرات")
-            st.caption("يمكنك تعديل 'المستهدف' مباشرة. لإضافة ملاحظة: اكتب في عمود '✍️ ملاحظة جديدة'.")
+            # 1. عرض الـ Scorecard للقراءة والتحليل السريع
+            draw_kpi_scorecard(df_kpi)
+
+            st.markdown("---")
+            st.markdown("#### ✏️ تحديث البيانات والملاحظات")
             
+            # 2. جدول التحرير (لإدخال الملاحظات والتعديل)
             df_kpi['New_Admin_Note'] = ""
             
             edited_kpi = st.data_editor(
@@ -339,12 +405,12 @@ def admin_view(sh, user_name):
                 key="kpi_editor_admin",
                 column_config={
                      "KPI_Name": st.column_config.TextColumn("المؤشر", width="large"),
-                     "Target": st.column_config.NumberColumn("المستهدف (Target)", required=True), 
-                     "Actual": st.column_config.NumberColumn("المتحقق (Actual)"), 
+                     "Target": st.column_config.NumberColumn("المستهدف", required=True), 
+                     "Actual": st.column_config.NumberColumn("الفعلي"), 
                      "Owner": st.column_config.TextColumn("المسؤول"),
                      "Owner_Comment": st.column_config.TextColumn("ملاحظات المالك", width="medium"),
                      "Admin_Comment": st.column_config.TextColumn("سجل المدير", width="medium"),
-                     "New_Admin_Note": st.column_config.TextColumn("✍️ ملاحظة إدارية جديدة", width="large"),
+                     "New_Admin_Note": st.column_config.TextColumn("✍️ ملاحظة جديدة", width="large"),
                      "Unit": None, "Direction": None, "Frequency": None 
                 },
                 disabled=["KPI_Name", "Actual", "Owner", "Owner_Comment", "Admin_Comment", "Unit", "Direction", "Frequency"]
@@ -389,16 +455,12 @@ def admin_view(sh, user_name):
                 with c2:
                     st.markdown("<div class='history-title'>سجل ملاحظات المدير الكامل:</div>", unsafe_allow_html=True)
                     st.markdown(f"<div class='history-box'>{row_kpi.get('Admin_Comment', 'لا يوجد')}</div>", unsafe_allow_html=True)
-            
-            st.markdown("---")
-            if not edited_kpi.empty:
-                draw_kpi_chart(edited_kpi)
                 
         except Exception as e:
             st.error(f"خطأ KPI: {e}")
 
 # ================================
-# واجهة المالك (Owner) - تحديث: إضافة التعديل والحذف
+# واجهة المالك (Owner)
 # ================================
 def owner_view(sh, user_name, my_initiatives_str):
     if my_initiatives_str:
@@ -422,7 +484,6 @@ def owner_view(sh, user_name, my_initiatives_str):
         else:
             sel_init = st.selectbox("اختر المبادرة", my_data['Mabadara'].unique())
             
-            # --- قسم إضافة نشاط ---
             with st.expander("➕ إضافة نشاط جديد لهذه المبادرة"):
                 with st.form("add_activity_form"):
                     new_act_name = st.text_input("اسم النشاط الجديد")
@@ -441,7 +502,6 @@ def owner_view(sh, user_name, my_initiatives_str):
                                 st.rerun()
                             except Exception as e: st.error(f"خطأ: {e}")
 
-            # --- قسم اختيار النشاط ---
             acts_in_init = my_data[my_data['Mabadara'] == sel_init]
             if not acts_in_init.empty:
                 st.markdown('<p class="step-header">اختر النشاط للتحديث</p>', unsafe_allow_html=True)
@@ -450,24 +510,18 @@ def owner_view(sh, user_name, my_initiatives_str):
                 if sel_act_name:
                     row = acts_in_init[acts_in_init['Activity'] == sel_act_name].iloc[0]
                     
-                    # --- التحديث الجديد: قسم إعدادات النشاط (تعديل/حذف) ---
                     with st.expander("⚙️ إعدادات النشاط (تعديل الاسم / حذف)"):
                         st.info("تنبيه: هذه الإجراءات تؤثر على هيكل النشاط.")
                         c_edit, c_delete = st.columns(2)
                         
-                        # 1. تعديل الاسم
                         with c_edit:
                             st.markdown("##### ✏️ تعديل مسمى النشاط")
                             new_name_val = st.text_input("الاسم الجديد", value=sel_act_name, key="rename_act")
                             if st.button("تحديث الاسم"):
                                 if new_name_val.strip() != sel_act_name:
                                     try:
-                                        # العثور على الخلية وتحديثها
-                                        # ملاحظة: نستخدم gspread find للبحث عن الخلية
                                         cell = ws_acts.find(sel_act_name)
                                         if cell:
-                                            # التأكد من أنها نفس المبادرة (للدقة)
-                                            # لكن find بسيط وسريع هنا
                                             ws_acts.update_cell(cell.row, cell.col, new_name_val)
                                             st.success("تم تعديل الاسم بنجاح!")
                                             time.sleep(1)
@@ -479,15 +533,11 @@ def owner_view(sh, user_name, my_initiatives_str):
                                 else:
                                     st.warning("الاسم الجديد مطابق للاسم الحالي.")
 
-                        # 2. حذف النشاط
                         with c_delete:
                             st.markdown("##### 🗑️ حذف النشاط")
                             st.warning("سيتم حذف النشاط وسجله بالكامل.")
                             if st.button("تأكيد الحذف", type="primary"):
                                 try:
-                                    # نحتاج للبحث الدقيق لضمان حذف الصف الصحيح
-                                    # نستخدم الداتا فريم للحصول على رقم الصف + 2 (لأن الداتا فريم تبدأ من 0 والملف له هيدر 1)
-                                    # الطريقة الأضمن هي البحث في الشيت مباشرة
                                     cell_del = ws_acts.find(sel_act_name)
                                     if cell_del:
                                         ws_acts.delete_rows(cell_del.row)
@@ -499,12 +549,11 @@ def owner_view(sh, user_name, my_initiatives_str):
                                 except Exception as e:
                                     st.error(f"خطأ في الحذف: {e}")
 
-                    # --- استكمال نموذج التحديث العادي ---
                     if str(row.get('Admin_Comment', '')).strip():
                         st.markdown(f"<div class='admin-alert-box'>📢 <strong>ملاحظة من المدير:</strong><div class='history-box'>{row['Admin_Comment']}</div></div>", unsafe_allow_html=True)
 
                     with st.form("update_form"):
-                        st.markdown("#### 📝 بيانات النشاط (التقدم)")
+                        st.markdown("#### 📝 بيانات النشاط")
                         col_start, col_end, col_prog = st.columns(3)
                         with col_start:
                              new_start = st.date_input("تاريخ البداية", value=parse_date(row['Start_Date']))
@@ -636,8 +685,10 @@ def viewer_view(sh, user_name):
             return
         df_kpi['Target'] = df_kpi['Target'].apply(safe_float)
         df_kpi['Actual'] = df_kpi['Actual'].apply(safe_float)
-        st.markdown("### 📊 الرسم البياني للمؤشرات")
-        draw_kpi_chart(df_kpi)
+        
+        # استخدام الـ Scorecard للمشاهد أيضاً ليكون العرض موحداً
+        draw_kpi_scorecard(df_kpi)
+        
     except Exception as e:
         st.error(f"خطأ في تحميل بيانات المؤشرات: {e}")
 
@@ -648,9 +699,6 @@ if not st.session_state['logged_in']:
     login()
 else:
     with st.container():
-        # تعديل الترويسة: 4 أعمدة لإضافة الشعار على اليسار
-        # بما أن الاتجاه RTL، فإن الترتيب الظاهري من اليمين لليسار هو:
-        # 1 (يمين), 2, 3, 4 (يسار)
         col_info, col_space, col_logout, col_logo = st.columns([3, 4, 1, 1])
         
         with col_info:
@@ -666,11 +714,9 @@ else:
                 st.rerun()
                 
         with col_logo:
-             # عرض الشعار إذا وجد
              if os.path.exists("logo.png"):
                  st.image("logo.png", width=80)
              else:
-                 # placeholder في حال عدم وجود الصورة
                  pass
 
     st.write("---") 
@@ -695,6 +741,6 @@ else:
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 24.0 (NMCC - 2026)
+    System Version: 25.0 (NMCC - 2026: Enhanced Scorecard)
 </div>
 """, unsafe_allow_html=True)
