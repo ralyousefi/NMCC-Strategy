@@ -46,18 +46,6 @@ st.markdown("""
         color: #0068c9;
         font-weight: bold;
     }
-
-    .activity-box {
-        background-color: #f8f9fa;
-        padding: 20px;
-        border-radius: 10px;
-        border-right: 6px solid #0068c9;
-        margin: 20px 0;
-        font-size: 18px;
-        line-height: 1.8;
-        color: #0e1117;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-    }
     
     /* تنسيق صندوق الملاحظات التاريخية */
     .history-box {
@@ -65,31 +53,21 @@ st.markdown("""
         padding: 15px;
         border-radius: 8px;
         border: 1px solid #d0e2ff;
-        margin-bottom: 10px;
-        font-size: 14px;
-        white-space: pre-wrap; /* للحفاظ على الأسطر الجديدة */
-        max-height: 200px;
-        overflow-y: auto;
+        margin-top: 10px;
+        margin-bottom: 20px;
+        font-size: 15px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+        box-shadow: inset 0 0 5px rgba(0,0,0,0.05);
+    }
+    
+    .history-title {
+        color: #0068c9;
+        font-weight: bold;
+        margin-bottom: 5px;
+        font-size: 16px;
     }
 
-    .admin-alert-box {
-        background-color: #fff3cd;
-        color: #856404;
-        padding: 15px;
-        border-radius: 8px;
-        border: 1px solid #ffeeba;
-        border-right: 5px solid #ffc107;
-        margin-bottom: 20px;
-        font-weight: bold;
-    }
-    
-    .step-header {
-        color: #0068c9;
-        font-size: 16px;
-        margin-bottom: 10px;
-        font-weight: bold;
-    }
-    
     .footer {
         position: fixed;
         left: 0;
@@ -157,13 +135,12 @@ def parse_date(date_str):
     except:
         return datetime.today().date()
 
-# --- دالة إضافة التاريخ للملاحظات (الجديدة) ---
 def append_timestamped_comment(original_text, new_comment):
-    if not new_comment or new_comment.strip() == "":
+    if not new_comment or str(new_comment).strip() == "":
         return original_text
     
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M") # تمت إضافة الوقت أيضاً
-    new_entry = f"📅 {timestamp}: {new_comment.strip()}"
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    new_entry = f"📅 {timestamp}: {str(new_comment).strip()}"
     
     if original_text and str(original_text).strip() != "":
         return f"{str(original_text)}\n----------------\n{new_entry}"
@@ -204,7 +181,6 @@ def login():
 # 4. واجهات المستخدمين
 # ---------------------------------------------------------
 
-# --- دالة رسم المؤشرات (مشتركة) ---
 def draw_kpi_chart(df):
     def get_status(row):
         target, actual = row['Target'], row['Actual']
@@ -237,10 +213,10 @@ def draw_kpi_chart(df):
     st.plotly_chart(fig, use_container_width=True)
 
 # ================================
-# واجهة المدير (Admin) - محدثة لدعم أرشفة ملاحظات المدير
+# واجهة المدير (Admin) - الإصدار الذكي للجدول
 # ================================
 def admin_view(sh, user_name):
-    st.markdown("### 📊 نظرة عامة (لوحة القيادة)")
+    st.markdown("### 📊 لوحة القيادة التنفيذية")
     
     try:
         ws_acts = sh.worksheet("Activities")
@@ -261,139 +237,193 @@ def admin_view(sh, user_name):
             k2.metric("📝 الأنشطة", total_activities)
             k3.metric("📈 متوسط الإنجاز", f"{avg_progress:.1f}%")
             k4.metric("🚨 أنشطة متأخرة", delayed_count, delta_color="inverse")
-
             st.markdown("---")
     except Exception as e:
         st.error(f"خطأ في تحميل الملخص: {e}")
 
     tab1, tab2 = st.tabs(["📋 تفاصيل المبادرات", "📊 مؤشرات الأداء (KPIs)"])
     
-    # --- تبويب المبادرات (تعديل: إضافة نظام الملاحظات المؤرخ للمدير) ---
+    # --- تبويب المبادرات (جدول ذكي) ---
     with tab1:
         try:
             if 'Admin_Comment' not in df_acts.columns: df_acts['Admin_Comment'] = ""
             if not df_acts.empty:
                 st.markdown("#### 🔎 مراجعة وتحديث المبادرات")
-                init = st.selectbox("1️⃣ اختر المبادرة:", df_acts['Mabadara'].unique())
+                st.caption("لإضافة ملاحظة: اكتب الملاحظة الجديدة في عمود '✍️ ملاحظة إدارية جديدة' ثم اضغط حفظ. ستتم إضافتها للسجل التاريخي.")
                 
-                # فلترة الأنشطة
-                filt = df_acts[df_acts['Mabadara'] == init]
+                init = st.selectbox("اختر المبادرة:", df_acts['Mabadara'].unique())
                 
-                # عرض جدول للقراءة فقط (للمساعدة في الاختيار)
-                st.dataframe(filt[['Activity', 'Progress', 'Start_Date', 'End_Date', 'Owner_Comment']], use_container_width=True, hide_index=True)
+                # تجهيز بيانات العرض
+                df_filt = df_acts[df_acts['Mabadara'] == init].copy()
+                df_filt['New_Admin_Note'] = "" # عمود مؤقت للكتابة الجديدة
                 
-                # اختيار نشاط محدد لإضافة الملاحظة
-                st.markdown("##### 2️⃣ اختر النشاط لإضافة/تحديث ملاحظات الإدارة:")
-                sel_act_admin = st.selectbox("النشاط", filt['Activity'].unique(), key="admin_act_select")
+                # عرض الجدول
+                edited_df = st.data_editor(
+                    df_filt,
+                    column_config={
+                        "Activity": st.column_config.TextColumn("النشاط", width="large", disabled=True),
+                        "Progress": st.column_config.ProgressColumn("الإنجاز %", format="%d%%", min_value=0, max_value=100, disabled=True),
+                        "Owner_Comment": st.column_config.TextColumn("آخر رد للموظف", width="medium", disabled=True),
+                        "Admin_Comment": st.column_config.TextColumn("سجل الملاحظات (للاطلاع)", width="medium", disabled=True),
+                        "New_Admin_Note": st.column_config.TextColumn("✍️ ملاحظة إدارية جديدة (اكتب هنا)", width="large"), # هذا العمود فقط قابل للتعديل
+                        "Evidence_Link": st.column_config.LinkColumn("رابط الدليل", display_text="📎 فتح"),
+                        "Start_Date": None, "End_Date": None, "End_Date_DT": None, "Mabadara": None # إخفاء الأعمدة غير الضرورية للسرعة
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    key="admin_acts_editor",
+                    num_rows="fixed",
+                    selection_mode="single-row", # تمكين اختيار الصف
+                    on_change=None
+                )
                 
-                if sel_act_admin:
-                    row_act = filt[filt['Activity'] == sel_act_admin].iloc[0]
-                    
-                    st.info(f"📝 **رد الموظف:** {row_act.get('Owner_Comment', 'لا يوجد')}")
-                    
-                    with st.form("admin_act_comment_form"):
-                        st.write("💬 **سجل ملاحظات المدير السابقة:**")
-                        prev_admin_note = str(row_act.get('Admin_Comment', ''))
-                        if prev_admin_note:
-                            st.markdown(f"<div class='history-box'>{prev_admin_note}</div>", unsafe_allow_html=True)
-                        else:
-                            st.caption("لا توجد ملاحظات سابقة.")
+                # زر الحفظ الذكي
+                if st.button("💾 حفظ الملاحظات الجديدة (أنشطة)"):
+                    with st.spinner("جاري حفظ ودمج الملاحظات..."):
+                        has_changes = False
+                        # نحتاج للتحديث على df_acts الأصلي
+                        if 'End_Date_DT' in df_acts.columns: df_acts = df_acts.drop(columns=['End_Date_DT'])
                         
-                        new_admin_note = st.text_area("✍️ إضافة ملاحظة إدارية جديدة (مع التاريخ التلقائي):")
-                        
-                        if st.form_submit_button("💾 حفظ الملاحظة"):
-                             # إعادة تحميل وتحديث
-                            try:
-                                sh_fresh = get_sheet_connection()
-                                ws_fresh = sh_fresh.worksheet("Activities")
-                                df_fresh = pd.DataFrame(ws_fresh.get_all_records())
-                                # تنظيف
-                                df_fresh['Mabadara'] = df_fresh['Mabadara'].astype(str).str.strip()
-                                df_fresh['Activity'] = df_fresh['Activity'].astype(str).str.strip()
-                                
-                                mask = (df_fresh['Mabadara'] == init) & (df_fresh['Activity'] == sel_act_admin)
-                                
+                        # التكرار فقط على الصفوف التي تم تعديلها (التي تحتوي على نص في New_Admin_Note)
+                        for index, row in edited_df.iterrows():
+                            new_note = str(row['New_Admin_Note']).strip()
+                            if new_note:
+                                has_changes = True
+                                # البحث عن الصف المطابق في الداتا فريم الأصلي
+                                mask = (df_acts['Mabadara'] == row['Mabadara']) & (df_acts['Activity'] == row['Activity'])
                                 if mask.any():
-                                    final_note = append_timestamped_comment(prev_admin_note, new_admin_note)
-                                    df_fresh.loc[mask, 'Admin_Comment'] = final_note
-                                    
-                                    clean_data = clean_df_for_gspread(df_fresh)
-                                    ws_fresh.update(values=[clean_data.columns.values.tolist()] + clean_data.values.tolist(), range_name='A1')
-                                    st.success("✅ تم حفظ الملاحظة!")
-                                    time.sleep(1)
-                                    st.rerun()
-                            except Exception as e:
-                                st.error(f"خطأ حفظ: {e}")
+                                    old_note = df_acts.loc[mask, 'Admin_Comment'].values[0]
+                                    final_note = append_timestamped_comment(old_note, new_note)
+                                    df_acts.loc[mask, 'Admin_Comment'] = final_note
+                        
+                        if has_changes:
+                            clean_data = clean_df_for_gspread(df_acts)
+                            ws_acts.update(values=[clean_data.columns.values.tolist()] + clean_data.values.tolist(), range_name='A1')
+                            st.success("✅ تم الحفظ! أضيفت الملاحظات الجديدة للسجل.")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.info("لم يتم كتابة أي ملاحظات جديدة للحفظ.")
+
+                # --- عرض السجل التاريخي أسفل الجدول عند الاختيار ---
+                # الحصول على الصف المختار من الجدول
+                selection = st.session_state.get("admin_acts_editor", {}).get("selection", {}).get("rows", [])
+                
+                if selection:
+                    selected_index = selection[0]
+                    # نأخذ الصف من edited_df المعروض
+                    selected_row = edited_df.iloc[selected_index]
+                    
+                    st.markdown("---")
+                    st.markdown(f"#### 📜 سجل التاريخ للنشاط: {selected_row['Activity']}")
+                    
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.markdown("<div class='history-title'>تعليقات الموظف (السابقة والحالية):</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='history-box'>{selected_row.get('Owner_Comment', 'لا يوجد')}</div>", unsafe_allow_html=True)
+                    
+                    with c2:
+                        st.markdown("<div class='history-title'>سجل ملاحظات المدير الكامل:</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='history-box'>{selected_row.get('Admin_Comment', 'لا يوجد')}</div>", unsafe_allow_html=True)
+                else:
+                    st.caption("ℹ️ اضغط على أي صف في الجدول لعرض سجل الملاحظات الكامل بالأسفل.")
 
         except Exception as e:
             st.error(f"خطأ تحميل: {e}")
 
-    # --- تبويب المؤشرات (تعديل: إضافة نظام الملاحظات المؤرخ للمدير) ---
+    # --- تبويب المؤشرات (جدول ذكي) ---
     with tab2:
         try:
             ws_kpi = sh.worksheet("KPIs")
             df_kpi = pd.DataFrame(ws_kpi.get_all_records())
             
-            if 'Admin_Comment' not in df_kpi.columns: df_kpi['Admin_Comment'] = ""
-            if 'Owner_Comment' not in df_kpi.columns: df_kpi['Owner_Comment'] = ""
-            if 'Owner' not in df_kpi.columns: df_kpi['Owner'] = ""
+            # التأكد من الأعمدة
+            for col in ['Admin_Comment', 'Owner_Comment', 'Owner']:
+                if col not in df_kpi.columns: df_kpi[col] = ""
             
             df_kpi['Target'] = df_kpi['Target'].apply(safe_float)
             df_kpi['Actual'] = df_kpi['Actual'].apply(safe_float)
             
             st.markdown("#### ✏️ إدارة المؤشرات")
+            st.caption("يمكنك تعديل 'المستهدف' مباشرة. لإضافة ملاحظة: اكتب في عمود '✍️ ملاحظة جديدة'.")
             
-            # عرض الرسم البياني العام
-            if not df_kpi.empty:
-                draw_kpi_chart(df_kpi)
-
-            st.markdown("---")
-            st.markdown("##### تحديث بيانات وملاحظات المؤشرات")
+            # عمود مؤقت
+            df_kpi['New_Admin_Note'] = ""
             
-            # بدلاً من الجدول القابل للتعديل، نستخدم الاختيار لضمان الأرشفة
-            sel_kpi_admin = st.selectbox("اختر المؤشر للتحديث:", df_kpi['KPI_Name'].unique(), key="admin_kpi_select")
+            edited_kpi = st.data_editor(
+                df_kpi, 
+                num_rows="fixed", 
+                use_container_width=True, 
+                key="kpi_editor_admin",
+                selection_mode="single-row",
+                column_config={
+                     "KPI_Name": st.column_config.TextColumn("المؤشر", disabled=True),
+                     "Target": st.column_config.NumberColumn("المستهدف (Target)", required=True), # قابل للتعديل
+                     "Actual": st.column_config.NumberColumn("المتحقق (Actual)", disabled=True), 
+                     "Owner": st.column_config.TextColumn("المسؤول", disabled=True),
+                     "Owner_Comment": st.column_config.TextColumn("ملاحظات المالك", width="medium", disabled=True),
+                     "Admin_Comment": st.column_config.TextColumn("سجل المدير", width="medium", disabled=True),
+                     "New_Admin_Note": st.column_config.TextColumn("✍️ ملاحظة إدارية جديدة", width="large"), # للكتابة
+                     "Unit": None, "Direction": None, "Frequency": None # إخفاء
+                }
+            )
             
-            if sel_kpi_admin:
-                kpi_row = df_kpi[df_kpi['KPI_Name'] == sel_kpi_admin].iloc[0]
-                
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("المستهدف الحالي", kpi_row['Target'])
-                c2.metric("المتحقق الحالي", kpi_row['Actual'])
-                c3.metric("المسؤول", kpi_row['Owner'])
-                c4.info(f"ملاحظات المالك:\n{kpi_row['Owner_Comment']}")
-                
-                with st.form("admin_kpi_update_form"):
-                    st.write("#### 📝 التعديل")
-                    new_target = st.number_input("تعديل المستهدف (Target)", value=safe_float(kpi_row['Target']))
+            if st.button("💾 حفظ تحديثات المؤشرات"):
+                with st.spinner("جاري الحفظ..."):
+                    has_changes = False
                     
-                    st.write("💬 **سجل ملاحظات المدير السابقة:**")
-                    prev_admin_kpi_note = str(kpi_row.get('Admin_Comment', ''))
-                    if prev_admin_kpi_note:
-                        st.markdown(f"<div class='history-box'>{prev_admin_kpi_note}</div>", unsafe_allow_html=True)
+                    # نحتاج للتحديث على df_kpi الأصلي (لأن Target قد يتغير أيضاً)
+                    # هنا نستخدم edited_kpi كمصدر للحقيقة لـ Target، ونعالج الملاحظات
                     
-                    new_admin_kpi_note = st.text_area("✍️ إضافة ملاحظة إدارية جديدة (مع التاريخ التلقائي):")
-                    
-                    if st.form_submit_button("💾 حفظ التحديثات"):
-                        try:
-                            sh_fresh_kpi = get_sheet_connection()
-                            ws_fresh_kpi = sh_fresh_kpi.worksheet("KPIs")
-                            df_fresh_kpi = pd.DataFrame(ws_fresh_kpi.get_all_records())
+                    for index, row in edited_kpi.iterrows():
+                        mask = df_kpi['KPI_Name'] == row['KPI_Name']
+                        if mask.any():
+                            # 1. تحديث المستهدف ( overwrite)
+                            if float(row['Target']) != float(df_kpi.loc[mask, 'Target'].values[0]):
+                                df_kpi.loc[mask, 'Target'] = row['Target']
+                                has_changes = True
                             
-                            mask = df_fresh_kpi['KPI_Name'] == sel_kpi_admin
-                            if mask.any():
-                                final_kpi_note = append_timestamped_comment(prev_admin_kpi_note, new_admin_kpi_note)
-                                
-                                df_fresh_kpi.loc[mask, 'Target'] = new_target
-                                df_fresh_kpi.loc[mask, 'Admin_Comment'] = final_kpi_note
-                                
-                                clean_data = clean_df_for_gspread(df_fresh_kpi)
-                                ws_fresh_kpi.update(values=[clean_data.columns.values.tolist()] + clean_data.values.tolist(), range_name='A1')
-                                st.success("✅ تم التحديث بنجاح!")
-                                time.sleep(1)
-                                st.rerun()
-                        except Exception as e:
-                            st.error(f"خطأ الحفظ: {e}")
+                            # 2. تحديث الملاحظات (append)
+                            new_note = str(row['New_Admin_Note']).strip()
+                            if new_note:
+                                old_note = df_kpi.loc[mask, 'Admin_Comment'].values[0]
+                                final_note = append_timestamped_comment(old_note, new_note)
+                                df_kpi.loc[mask, 'Admin_Comment'] = final_note
+                                has_changes = True
 
+                    if has_changes:
+                        clean_data = clean_df_for_gspread(df_kpi)
+                        ws_kpi.update(values=[clean_data.columns.values.tolist()] + clean_data.values.tolist(), range_name='A1')
+                        st.success("✅ تم الحفظ بنجاح!")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.info("لا توجد تغييرات للحفظ.")
+            
+            # --- عرض السجل التاريخي للمؤشر المختار ---
+            sel_kpi = st.session_state.get("kpi_editor_admin", {}).get("selection", {}).get("rows", [])
+            if sel_kpi:
+                idx = sel_kpi[0]
+                row_kpi = edited_kpi.iloc[idx]
+                
+                st.markdown("---")
+                st.markdown(f"#### 📜 تفاصيل وسجل المؤشر: {row_kpi['KPI_Name']}")
+                
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown("<div class='history-title'>سجل ملاحظات المالك:</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='history-box'>{row_kpi.get('Owner_Comment', 'لا يوجد')}</div>", unsafe_allow_html=True)
+                with c2:
+                    st.markdown("<div class='history-title'>سجل ملاحظات المدير الكامل:</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='history-box'>{row_kpi.get('Admin_Comment', 'لا يوجد')}</div>", unsafe_allow_html=True)
+            else:
+                 st.caption("ℹ️ اضغط على أي صف لعرض السجلات التاريخية بالأسفل.")
+            
+            # الرسم البياني في الأسفل
+            st.markdown("---")
+            if not edited_kpi.empty:
+                draw_kpi_chart(edited_kpi)
+                
         except Exception as e:
             st.error(f"خطأ KPI: {e}")
 
@@ -629,6 +659,6 @@ else:
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 21.0 (Full History: Admin & Owner)
+    System Version: 22.0 (Smart Table: Append Notes & Show History)
 </div>
 """, unsafe_allow_html=True)
