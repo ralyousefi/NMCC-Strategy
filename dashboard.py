@@ -35,11 +35,16 @@ st.markdown("""
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         text-align: center;
     }
+
+    /* --- التعديل هنا: تنسيق عناوين البطاقات (المبادرات، الأنشطة...) --- */
     div[data-testid="stMetricLabel"] {
-        font-size: 16px;
-        color: #555;
+        font-size: 20px !important;      /* تكبير الخط */
+        color: #0068c9 !important;       /* اللون الأزرق */
+        font-weight: bold !important;    /* خط عريض */
         justify-content: center;
     }
+    /* --------------------------------------------------------------- */
+
     div[data-testid="stMetricValue"] {
         font-size: 28px;
         color: #0068c9;
@@ -313,15 +318,15 @@ def admin_view(sh, user_name):
                     y=edited_kpi['Actual'], 
                     name='الفعلي', 
                     marker_color=status_colors,
-                    text=edited_kpi['Actual'],     
-                    textposition='inside',         
-                    width=0.5                      
+                    text=edited_kpi['Actual'],      
+                    textposition='inside',          
+                    width=0.5                       
                 ))
                 
                 fig.add_trace(go.Scatter(
                     x=edited_kpi['KPI_Name'], 
                     y=edited_kpi['Target'], 
-                    mode='markers',                
+                    mode='markers',                 
                     name='المستهدف', 
                     marker=dict(symbol='line-ew', size=50, color='black', line=dict(width=3)), 
                 ))
@@ -330,8 +335,8 @@ def admin_view(sh, user_name):
                     title="مقارنة الأداء (الفعلي vs المستهدف)",
                     xaxis_title="المؤشر",
                     yaxis_title="القيمة",
-                    barmode='overlay',             
-                    bargap=0.4,                    
+                    barmode='overlay',               
+                    bargap=0.4,                      
                     legend=dict(orientation="h", y=1.1, x=0.5, xanchor='center'),
                     yaxis=dict(showgrid=True, gridcolor='lightgrey'),
                 )
@@ -469,8 +474,6 @@ if not st.session_state['logged_in']:
 else:
     with st.sidebar:
         # --- مكان الشعار (Logo) ---
-        # يمكنك استبدال الرابط برابط شعار الجهة الخاص بك
-        # وضعنا شعار "رؤية 2030" كمثال افتراضي
         st.image("https://upload.wikimedia.org/wikipedia/en/thumb/f/f6/Saudi_Vision_2030_logo.svg/1200px-Saudi_Vision_2030_logo.svg.png", use_container_width=True)
         
         st.write("---")
@@ -498,6 +501,6 @@ else:
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 15.0 (Pro: KPI Cards & Branding)
+    System Version: 15.0 (Blue Labels Fixed)
 </div>
 """, unsafe_allow_html=True)
