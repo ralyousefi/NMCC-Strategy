@@ -13,10 +13,10 @@ from datetime import datetime
 # ---------------------------------------------------------
 st.set_page_config(page_title="نظام إدارة الاستراتيجية", layout="wide", page_icon="📊")
 
-# تحسينات CSS للهوية البصرية وبطاقات الأداء
+# تحسينات CSS للهوية البصرية (إصلاح شامل للمشاكل)
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap');
     
     html, body, [class*="css"] {
         font-family: 'Tajawal', sans-serif;
@@ -26,7 +26,14 @@ st.markdown("""
     h1, h2, h3, h4, p, div, input, select, textarea, .stSelectbox, .stNumberInput {text-align: right;}
     .stDataFrame {direction: rtl;}
     
-    /* تنسيق بطاقات الأداء (KPI Cards) */
+    /* حل مشكلة الشريط الجانبي المقتطع في صفحة المالك */
+    .block-container {
+        padding-right: 3rem !important;
+        padding-left: 3rem !important;
+        max-width: 100%;
+    }
+
+    /* تنسيق بطاقات الأداء (KPI Cards) - الخلفية */
     div[data-testid="stMetric"] {
         background-color: #ffffff;
         border: 1px solid #e6e6e6;
@@ -34,21 +41,27 @@ st.markdown("""
         border-radius: 10px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         text-align: center;
+        direction: rtl;
     }
 
-    /* --- التعديل 1: تكبير الخط وتلوينه بالأزرق ليطابق الأرقام --- */
+    /* --- إصلاح نهائي لظهور نصوص العناوين --- */
+    /* استهداف الحاوية وكل العناصر داخلها لإجبار اللون الأزرق */
     div[data-testid="stMetricLabel"] {
         justify-content: center;
     }
-    
-    /* استهداف النص الداخلي بدقة */
-    div[data-testid="stMetricLabel"] p {
-        font-size: 24px !important;      /* حجم كبير مقارب للأرقام */
-        color: #0068c9 !important;       /* اللون الأزرق */
+    div[data-testid="stMetricLabel"], 
+    div[data-testid="stMetricLabel"] p,
+    div[data-testid="stMetricLabel"] div {
+        font-size: 20px !important;
+        color: #0068c9 !important;       /* إجبار اللون الأزرق */
+        fill: #0068c9 !important;        /* في حال وجود أيقونات SVG */
         font-weight: 800 !important;     /* خط عريض جداً */
+        visibility: visible !important;  /* تأكيد الظهور */
+        opacity: 1 !important;
     }
-    /* ----------------------------------------------------------- */
+    /* -------------------------------------- */
 
+    /* تنسيق الأرقام */
     div[data-testid="stMetricValue"] {
         font-size: 28px;
         color: #0068c9;
@@ -110,8 +123,6 @@ SHEET_ID = "11tKfYa-Sqa96wDwQvMvChgRWaxgMRAWAIvul7p27ayY"
 
 def get_creds():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    
-    # 1. المحاولة الأولى: Secrets (للموقع أونلاين)
     try:
         if st.secrets is not None and 'gcp_service_account' in st.secrets:
             creds_dict = dict(st.secrets["gcp_service_account"])
@@ -121,7 +132,6 @@ def get_creds():
     except Exception:
         pass
 
-    # 2. المحاولة الثانية: الملف المحلي (لـ Codespaces)
     json_key_file = "credentials.json"
     if os.path.exists(json_key_file):
         return ServiceAccountCredentials.from_json_keyfile_name(json_key_file, scope)
@@ -195,50 +205,32 @@ def login():
 
 # --- واجهة الأدمن (محسنة) ---
 def admin_view(sh, user_name):
-    # --- التعديل 2: وضع العنوان والصورة بجانب بعضهما ---
-    col_header, col_logo = st.columns([4, 1]) # تقسيم الصفحة: جزء كبير للعنوان وجزء صغير للصورة
-    
-    with col_header:
-        st.title(f"لوحة القيادة التنفيذية - {user_name}")
-    
-    with col_logo:
-        # تأكد من رفع صورة باسم logo.png أو قم بتغيير الاسم هنا
-        image_path = "logo.png" 
-        if os.path.exists(image_path):
-            st.image(image_path, use_container_width=True)
-        else:
-            # رسالة تظهر فقط إذا لم يتم العثور على الصورة
-            st.warning("⚠️ الصورة غير موجودة (logo.png)")
-    # ---------------------------------------------------
+    # تم إزالة الأعمدة والصورة الجانبية لتجنب التداخل
+    st.markdown(f"<h1 style='text-align: center;'>لوحة القيادة التنفيذية - {user_name}</h1>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
 
-    # تحميل البيانات مرة واحدة لاستخدامها في البطاقات والجداول
     try:
         ws_acts = sh.worksheet("Activities")
         df_acts = pd.DataFrame(ws_acts.get_all_records())
         
-        # --- 1. بطاقات الأداء العلوية (KPI Cards) ---
         if not df_acts.empty:
             st.markdown("### 📊 نظرة عامة")
             
-            # تجهيز الحسابات
             df_acts['Progress'] = df_acts['Progress'].apply(safe_int)
-            total_initiatives = df_acts['Mabadara'].nunique() # عدد المبادرات الفريدة
-            total_activities = len(df_acts) # عدد الأنشطة
-            avg_progress = df_acts['Progress'].mean() # متوسط الإنجاز
+            total_initiatives = df_acts['Mabadara'].nunique()
+            total_activities = len(df_acts)
+            avg_progress = df_acts['Progress'].mean()
             
-            # حساب المتأخرات
             today = datetime.now().date()
-            # نحول عمود التاريخ لنتأكد من المقارنة الصحيحة
             df_acts['End_Date_DT'] = pd.to_datetime(df_acts['End_Date'], errors='coerce').dt.date
-            # الشرط: الإنجاز أقل من 100% والتاريخ فات
             delayed_count = len(df_acts[(df_acts['Progress'] < 100) & (df_acts['End_Date_DT'] < today)])
 
-            # عرض البطاقات
+            # البطاقات
             k1, k2, k3, k4 = st.columns(4)
             k1.metric("📦 المبادرات", total_initiatives)
             k2.metric("📝 الأنشطة", total_activities)
             k3.metric("📈 متوسط الإنجاز", f"{avg_progress:.1f}%")
-            k4.metric("🚨 أنشطة متأخرة", delayed_count, delta_color="inverse") # inverse يجعله أحمر إذا زاد
+            k4.metric("🚨 أنشطة متأخرة", delayed_count, delta_color="inverse")
 
             st.markdown("---")
     
@@ -247,7 +239,6 @@ def admin_view(sh, user_name):
 
     tab1, tab2 = st.tabs(["📋 تفاصيل المبادرات", "📊 مؤشرات الأداء (KPIs)"])
     
-    # 1. متابعة المبادرات
     with tab1:
         try:
             if 'Admin_Comment' not in df_acts.columns:
@@ -265,7 +256,7 @@ def admin_view(sh, user_name):
                         "Progress": st.column_config.ProgressColumn("الإنجاز %", format="%d%%", min_value=0, max_value=100),
                         "Admin_Comment": st.column_config.TextColumn("ملاحظات المدير", width="medium"),
                         "Owner_Comment": st.column_config.TextColumn("رد الموظف", disabled=True),
-                        "End_Date_DT": None # إخفاء عمود الحسابات المساعد
+                        "End_Date_DT": None
                     },
                     disabled=["Mabadara", "Activity", "Start_Date", "End_Date", "Progress", "Evidence_Link", "Owner_Comment"],
                     use_container_width=True,
@@ -276,7 +267,6 @@ def admin_view(sh, user_name):
                 if st.button("💾 حفظ الملاحظات"):
                     with st.spinner("جاري حفظ الملاحظات..."):
                         try:
-                            # حذف العمود المساعد قبل الحفظ
                             if 'End_Date_DT' in df_acts.columns:
                                 df_acts = df_acts.drop(columns=['End_Date_DT'])
 
@@ -295,7 +285,6 @@ def admin_view(sh, user_name):
         except Exception as e:
             st.error(f"خطأ تحميل: {e}")
 
-    # 2. المؤشرات
     with tab2:
         try:
             ws_kpi = sh.worksheet("KPIs")
@@ -484,41 +473,9 @@ def owner_view(sh, user_name, my_initiatives_str):
     except Exception as e:
         st.error(f"خطأ: {e}")
 
-# ---------------------------------------------------------
-# 5. التشغيل
-# ---------------------------------------------------------
-if not st.session_state['logged_in']:
-    login()
-else:
-    with st.sidebar:
-        # --- مكان الشعار (Logo) ---
-        st.image("https://upload.wikimedia.org/wikipedia/en/thumb/f/f6/Saudi_Vision_2030_logo.svg/1200px-Saudi_Vision_2030_logo.svg.png", use_container_width=True)
-        
-        st.write("---")
-        st.write(f"### 👤 {st.session_state['user_info']['name']}")
-        st.caption(f"الدور: {st.session_state['user_info']['role']}")
-        
-        if st.button("تسجيل الخروج", use_container_width=True):
-            st.session_state['logged_in'] = False
-            st.rerun()
-            
-    try:
-        connection = get_sheet_connection()
-        role = str(st.session_state['user_info']['role']).strip().title()
-        
-        if role == 'Admin':
-            admin_view(connection, st.session_state['user_info']['name'])
-        elif role == 'Owner':
-            owner_view(connection, st.session_state['user_info']['name'], st.session_state['user_info']['assigned_initiative'])
-        else:
-            st.error(f"⚠️ خطأ: الدور '{role}' غير معروف.")
-            
-    except Exception as e:
-        st.error(f"خطأ غير متوقع: {e}")
-
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 15.3 (Fixed Labels & Header Image)
+    System Version: 15.5 (Layout & Labels Fixed)
 </div>
 """, unsafe_allow_html=True)
