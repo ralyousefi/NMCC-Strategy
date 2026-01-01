@@ -26,7 +26,7 @@ st.markdown("""
     h1, h2, h3, h4, p, div, input, select, textarea, .stSelectbox, .stNumberInput {text-align: right;}
     .stDataFrame {direction: rtl;}
     
-    /* تنسيق بطاقات الأداء (KPI Cards) - الخلفية */
+    /* تنسيق بطاقات الأداء (KPI Cards) */
     div[data-testid="stMetric"] {
         background-color: #ffffff;
         border: 1px solid #e6e6e6;
@@ -35,24 +35,11 @@ st.markdown("""
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         text-align: center;
     }
-
-    /* --- إصلاح المشكلة: تلوين العناوين (المبادرات، الأنشطة...) --- */
-    /* استهداف النص مباشرة لضمان تغيير اللون */
-    div[data-testid="stMetricLabel"] p {
-        font-size: 20px !important;
-        color: #0068c9 !important;      /* اللون الأزرق */
-        font-weight: 700 !important;     /* خط عريض */
-    }
-    
-    /* في حال تغير هيكلية Streamlit، نستهدف الحاوية أيضاً كاحتياط */
     div[data-testid="stMetricLabel"] {
-        color: #0068c9 !important;
-        font-weight: bold !important;
+        font-size: 16px;
+        color: #555;
         justify-content: center;
     }
-    /* ----------------------------------------------------------- */
-
-    /* تنسيق الأرقام */
     div[data-testid="stMetricValue"] {
         font-size: 28px;
         color: #0068c9;
@@ -326,15 +313,15 @@ def admin_view(sh, user_name):
                     y=edited_kpi['Actual'], 
                     name='الفعلي', 
                     marker_color=status_colors,
-                    text=edited_kpi['Actual'],      
-                    textposition='inside',          
-                    width=0.5                       
+                    text=edited_kpi['Actual'],     
+                    textposition='inside',         
+                    width=0.5                      
                 ))
                 
                 fig.add_trace(go.Scatter(
                     x=edited_kpi['KPI_Name'], 
                     y=edited_kpi['Target'], 
-                    mode='markers',                 
+                    mode='markers',                
                     name='المستهدف', 
                     marker=dict(symbol='line-ew', size=50, color='black', line=dict(width=3)), 
                 ))
@@ -343,8 +330,8 @@ def admin_view(sh, user_name):
                     title="مقارنة الأداء (الفعلي vs المستهدف)",
                     xaxis_title="المؤشر",
                     yaxis_title="القيمة",
-                    barmode='overlay',               
-                    bargap=0.4,                      
+                    barmode='overlay',             
+                    bargap=0.4,                    
                     legend=dict(orientation="h", y=1.1, x=0.5, xanchor='center'),
                     yaxis=dict(showgrid=True, gridcolor='lightgrey'),
                 )
@@ -474,9 +461,43 @@ def owner_view(sh, user_name, my_initiatives_str):
     except Exception as e:
         st.error(f"خطأ: {e}")
 
+# ---------------------------------------------------------
+# 5. التشغيل
+# ---------------------------------------------------------
+if not st.session_state['logged_in']:
+    login()
+else:
+    with st.sidebar:
+        # --- مكان الشعار (Logo) ---
+        # يمكنك استبدال الرابط برابط شعار الجهة الخاص بك
+        # وضعنا شعار "رؤية 2030" كمثال افتراضي
+        st.image("https://upload.wikimedia.org/wikipedia/en/thumb/f/f6/Saudi_Vision_2030_logo.svg/1200px-Saudi_Vision_2030_logo.svg.png", use_container_width=True)
+        
+        st.write("---")
+        st.write(f"### 👤 {st.session_state['user_info']['name']}")
+        st.caption(f"الدور: {st.session_state['user_info']['role']}")
+        
+        if st.button("تسجيل الخروج", use_container_width=True):
+            st.session_state['logged_in'] = False
+            st.rerun()
+            
+    try:
+        connection = get_sheet_connection()
+        role = str(st.session_state['user_info']['role']).strip().title()
+        
+        if role == 'Admin':
+            admin_view(connection, st.session_state['user_info']['name'])
+        elif role == 'Owner':
+            owner_view(connection, st.session_state['user_info']['name'], st.session_state['user_info']['assigned_initiative'])
+        else:
+            st.error(f"⚠️ خطأ: الدور '{role}' غير معروف.")
+            
+    except Exception as e:
+        st.error(f"خطأ غير متوقع: {e}")
+
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 15.1 (Forced Blue Text)
+    System Version: 15.0 (Pro: KPI Cards & Branding)
 </div>
 """, unsafe_allow_html=True)
