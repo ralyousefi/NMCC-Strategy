@@ -99,6 +99,7 @@ st.markdown("""
 # ---------------------------------------------------------
 KPI_GROUPS = {
     "QI4SD": [
+        "QI4SD - Metrology", # تمت الإضافة
         "CMC",
         "B of CMC",
         "ILC",
@@ -129,7 +130,6 @@ KPI_GROUPS = {
 def get_kpi_category(kpi_name):
     kpi_name = str(kpi_name).strip()
     for group, items in KPI_GROUPS.items():
-        # تنظيف النصوص للمقارنة
         clean_items = [str(i).strip() for i in items]
         if kpi_name in clean_items:
             return group
@@ -231,77 +231,87 @@ def login():
 # 5. واجهات المستخدمين
 # ---------------------------------------------------------
 
-# --- دالة رسم Enhanced Scorecard (مع دعم المجموعات) ---
-def draw_categorized_scorecards(df_all):
-    if df_all.empty:
-        st.info("لا توجد بيانات للعرض.")
+# --- دالة رسم Bar Chart لمجموعة محددة ---
+def plot_group_barchart(df, group_title):
+    if df.empty:
+        st.info(f"لا توجد مؤشرات في مجموعة: {group_title}")
         return
 
-    # 1. منطق الحساب (Calculation Logic)
-    def calculate_metrics(row):
-        target = row['Target']
-        actual = row['Actual']
+    # منطق تحديد الألوان
+    def get_color(row):
+        target, actual = row['Target'], row['Actual']
         direction = str(row.get('Direction', 'تصاعدي')).strip()
         
-        status_icon = "⚪"
-        progress_val = 0.0
-        
         if direction == 'تنازلي':
-            if actual <= target:
-                status_icon = "🟢" 
-                progress_val = 1.0 
-            else:
-                status_icon = "🔴" 
-                try:
-                    progress_val = target / actual if actual != 0 else 0
-                except:
-                    progress_val = 0
+            if actual <= target: return "#2ca02c" # أخضر (جيد)
+            else: return "#d62728" # أحمر (سيء)
         else:
             if actual >= target:
-                status_icon = "🟢" 
-                if actual > target: status_icon = "🔵" 
-                progress_val = 1.0
-            else:
-                status_icon = "🔴" 
-                try:
-                    progress_val = actual / target if target != 0 else 0
-                except:
-                    progress_val = 0
-        
-        return pd.Series([status_icon, progress_val])
+                if actual > target: return "#1f77b4" # أزرق (ممتاز)
+                return "#2ca02c" # أخضر (متحقق)
+            else: return "#d62728" # أحمر (متأخر)
 
-    df_all[['Status_Icon', 'Progress_Ratio']] = df_all.apply(calculate_metrics, axis=1)
+    df['Color'] = df.apply(get_color, axis=1)
+
+    fig = go.Figure()
     
+    # 1. الأعمدة (الفعلي)
+    fig.add_trace(go.Bar(
+        x=df['KPI_Name'], 
+        y=df['Actual'], 
+        name='الفعلي', 
+        marker_color=df['Color'], 
+        text=df['Actual'],       
+        textposition='auto',
+        width=0.6
+    ))
+    
+    # 2. الخطوط (المستهدف)
+    fig.add_trace(go.Scatter(
+        x=df['KPI_Name'], 
+        y=df['Target'], 
+        mode='markers',                  
+        name='المستهدف', 
+        marker=dict(symbol='line-ew', size=40, color='black', line=dict(width=3)), 
+    ))
+
+    fig.update_layout(
+        title=dict(text=f"📊 {group_title}", x=0.5, xanchor='center'),
+        barmode='overlay',                
+        bargap=0.4,
+        yaxis=dict(showgrid=True, gridcolor='lightgrey'),
+        margin=dict(t=50, b=50, l=20, r=20),
+        legend=dict(orientation="h", y=1.1, x=0.5, xanchor='center')
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+# --- دالة العرض المنظم (Layout) ---
+def display_kpi_layout(df_all):
     # تصنيف البيانات
     df_all['Category'] = df_all['KPI_Name'].apply(get_kpi_category)
     
-    # 2. عرض المجموعات
-    # الترتيب حسب المجموعات المعرفة
-    ordered_groups = list(KPI_GROUPS.keys()) + ["مؤشرات أخرى"]
+    # تقسيم البيانات حسب المجموعات
+    g1 = df_all[df_all['Category'] == "QI4SD"]
+    g2 = df_all[df_all['Category'] == "البحث والتطوير"]
+    g3 = df_all[df_all['Category'] == "الكفاءة التشغيلية"]
     
-    for group in ordered_groups:
-        group_df = df_all[df_all['Category'] == group]
+    # --- الصف الأول: عمودين ---
+    # بسبب اتجاه RTL: العمود الأول (يمين) هو col1، الثاني (يسار) هو col2
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # المجموعة الأولى (يمين)
+        plot_group_barchart(g1, "مجموعة QI4SD")
         
-        if not group_df.empty:
-            st.markdown(f"#### 📌 {group}")
-            st.dataframe(
-                group_df,
-                column_order=["Status_Icon", "KPI_Name", "Unit", "Target", "Actual", "Progress_Ratio", "Owner"],
-                column_config={
-                    "Status_Icon": st.column_config.TextColumn("الحالة", width="small"),
-                    "KPI_Name": st.column_config.TextColumn("المؤشر", width="large"),
-                    "Unit": st.column_config.TextColumn("الوحدة", width="small"),
-                    "Target": st.column_config.NumberColumn("المستهدف", format="%.2f"),
-                    "Actual": st.column_config.NumberColumn("الفعلي", format="%.2f"),
-                    "Progress_Ratio": st.column_config.ProgressColumn(
-                        "نسبة الأداء", format="%.0f%%", min_value=0, max_value=1,
-                    ),
-                    "Owner": st.column_config.TextColumn("المسؤول", width="medium"),
-                },
-                hide_index=True,
-                use_container_width=True
-            )
-            st.markdown("---")
+    with col2:
+        # المجموعة الثانية (يسار)
+        plot_group_barchart(g2, "مجموعة البحث والتطوير")
+        
+    # --- الصف الثاني: عمود كامل ---
+    st.markdown("---")
+    # المجموعة الثالثة (أسفل)
+    plot_group_barchart(g3, "مجموعة الكفاءة التشغيلية")
 
 # ================================
 # واجهة المدير (Admin)
@@ -332,7 +342,7 @@ def admin_view(sh, user_name):
     except Exception as e:
         st.error(f"خطأ في تحميل الملخص: {e}")
 
-    tab1, tab2 = st.tabs(["📋 تفاصيل المبادرات", "📊 مؤشرات الأداء (بالمجموعات)"])
+    tab1, tab2 = st.tabs(["📋 تفاصيل المبادرات", "📊 مؤشرات الأداء (المجموعات)"])
     
     # --- تبويب المبادرات ---
     with tab1:
@@ -406,7 +416,7 @@ def admin_view(sh, user_name):
         except Exception as e:
             st.error(f"خطأ تحميل: {e}")
 
-    # --- تبويب المؤشرات (Categorized) ---
+    # --- تبويب المؤشرات (Layout Mode) ---
     with tab2:
         try:
             ws_kpi = sh.worksheet("KPIs")
@@ -418,13 +428,12 @@ def admin_view(sh, user_name):
             df_kpi['Target'] = df_kpi['Target'].apply(safe_float)
             df_kpi['Actual'] = df_kpi['Actual'].apply(safe_float)
             
-            # 1. عرض الـ Scorecard بالمجموعات
-            draw_categorized_scorecards(df_kpi)
+            # 1. عرض المخطط بالتنسيق الجديد
+            display_kpi_layout(df_kpi)
 
             st.markdown("---")
             st.markdown("#### ✏️ تحديث البيانات والملاحظات")
             
-            # فلترة لتسهيل التعديل
             filter_cat = st.selectbox("📂 فلترة التعديل حسب المجموعة:", ["الكل"] + list(KPI_GROUPS.keys()))
             
             df_kpi['Category'] = df_kpi['KPI_Name'].apply(get_kpi_category)
@@ -724,8 +733,8 @@ def viewer_view(sh, user_name):
         df_kpi['Target'] = df_kpi['Target'].apply(safe_float)
         df_kpi['Actual'] = df_kpi['Actual'].apply(safe_float)
         
-        # استخدام الـ Scorecard المبوب
-        draw_categorized_scorecards(df_kpi)
+        # العرض المنظم
+        display_kpi_layout(df_kpi)
         
     except Exception as e:
         st.error(f"خطأ في تحميل بيانات المؤشرات: {e}")
@@ -779,6 +788,6 @@ else:
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 26.0 (NMCC - 2026: Categorized KPIs)
+    System Version: 27.0 (NMCC - 2026: Categorized Bar Charts Layout)
 </div>
 """, unsafe_allow_html=True)
