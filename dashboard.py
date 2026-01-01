@@ -47,7 +47,6 @@ st.markdown("""
         font-weight: bold;
     }
     
-    /* تنسيق صندوق الملاحظات التاريخية */
     .history-box {
         background-color: #eef5ff;
         padding: 15px;
@@ -96,7 +95,48 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 2. إعدادات الاتصال
+# 2. تعريف المجموعات (Categorization)
+# ---------------------------------------------------------
+KPI_GROUPS = {
+    "QI4SD": [
+        "CMC",
+        "B of CMC",
+        "ILC",
+        "CC",
+        "OIML project groups",
+        "OIML-CS - number of services offered"
+    ],
+    "البحث والتطوير": [
+        "نسبة الأبحاث المنشورة التي تم الاستناد إليها",
+        "عدد الأبحاث المنشورة في مجلات مصنفة عالمياً",
+        "عدد الطلاب الملتحقين",
+        "عدد فعاليات الاستقطاب الجامعي",
+        "عدد المشاريع الوطنية",
+        "عدد المشاركين سنوياً في برامج التبادل الفني"
+    ],
+    "الكفاءة التشغيلية": [
+        "نسبة نضج الحوكمة المؤسسية KAQA",
+        "مؤشر التميز المؤسسي",
+        "نسبة الإجراءات المؤتمتة",
+        "مستوى رضا المستفيدين",
+        "التحول الرقمي DGA",
+        "نسبة الدوران الوظيفي",
+        "نسبة الإيرادات الى إجمالي ميزانية",
+        "نسبة النمو في إيرادات"
+    ]
+}
+
+def get_kpi_category(kpi_name):
+    kpi_name = str(kpi_name).strip()
+    for group, items in KPI_GROUPS.items():
+        # تنظيف النصوص للمقارنة
+        clean_items = [str(i).strip() for i in items]
+        if kpi_name in clean_items:
+            return group
+    return "مؤشرات أخرى"
+
+# ---------------------------------------------------------
+# 3. إعدادات الاتصال والدوال المساعدة
 # ---------------------------------------------------------
 SHEET_ID = "11tKfYa-Sqa96wDwQvMvChgRWaxgMRAWAIvul7p27ayY"
 
@@ -121,7 +161,6 @@ def get_sheet_connection():
     client = gspread.authorize(creds)
     return client.open_by_key(SHEET_ID)
 
-# --- دوال مساعدة ---
 def safe_int(val):
     try:
         if str(val).strip() == '': return 0
@@ -159,7 +198,7 @@ def append_timestamped_comment(original_text, new_comment):
         return new_entry
 
 # ---------------------------------------------------------
-# 3. نظام تسجيل الدخول
+# 4. نظام تسجيل الدخول
 # ---------------------------------------------------------
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
@@ -189,47 +228,41 @@ def login():
                 st.error(f"خطأ اتصال: {e}")
 
 # ---------------------------------------------------------
-# 4. واجهات المستخدمين
+# 5. واجهات المستخدمين
 # ---------------------------------------------------------
 
-# --- دالة رسم Enhanced Scorecard الجديدة ---
-def draw_kpi_scorecard(df):
-    if df.empty:
+# --- دالة رسم Enhanced Scorecard (مع دعم المجموعات) ---
+def draw_categorized_scorecards(df_all):
+    if df_all.empty:
         st.info("لا توجد بيانات للعرض.")
         return
 
-    # 1. حساب حالة المؤشر والتقدم (Calculation Logic)
+    # 1. منطق الحساب (Calculation Logic)
     def calculate_metrics(row):
         target = row['Target']
         actual = row['Actual']
         direction = str(row.get('Direction', 'تصاعدي')).strip()
         
-        # تحديد الحالة واللون
         status_icon = "⚪"
         progress_val = 0.0
         
         if direction == 'تنازلي':
-            # في التنازلي: الأقل هو الأفضل
-            # إذا كان الفعلي أقل من المستهدف -> ممتاز (أخضر)
             if actual <= target:
-                status_icon = "🟢" # متحقق/متقدم
-                progress_val = 1.0 # 100%
+                status_icon = "🟢" 
+                progress_val = 1.0 
             else:
-                status_icon = "🔴" # متأخر
-                # حساب نسبة عكسية تقريبية: كلما زاد عن الهدف قلت النسبة
+                status_icon = "🔴" 
                 try:
-                    # معادلة تقريبية للتوضيح: (Target / Actual)
                     progress_val = target / actual if actual != 0 else 0
                 except:
                     progress_val = 0
         else:
-            # في التصاعدي: الأكثر هو الأفضل
             if actual >= target:
-                status_icon = "🟢" # متحقق/متقدم (أخضر) - يمكن استخدام الأزرق للمتقدم جداً
+                status_icon = "🟢" 
                 if actual > target: status_icon = "🔵" 
                 progress_val = 1.0
             else:
-                status_icon = "🔴" # متأخر
+                status_icon = "🔴" 
                 try:
                     progress_val = actual / target if target != 0 else 0
                 except:
@@ -237,42 +270,38 @@ def draw_kpi_scorecard(df):
         
         return pd.Series([status_icon, progress_val])
 
-    df[['Status_Icon', 'Progress_Ratio']] = df.apply(calculate_metrics, axis=1)
-
-    # 2. عرض الجدول المحسن (Scorecard View)
-    st.markdown("### 📋 بطاقة الأداء (Scorecard)")
+    df_all[['Status_Icon', 'Progress_Ratio']] = df_all.apply(calculate_metrics, axis=1)
     
-    # تنسيق البيانات للعرض
-    # نقوم بإنشاء DataFrame جديد مخصص للعرض فقط
-    display_df = df.copy()
+    # تصنيف البيانات
+    df_all['Category'] = df_all['KPI_Name'].apply(get_kpi_category)
     
-    # استخدام column_config لعرض شريط التقدم والأيقونات
-    st.dataframe(
-        display_df,
-        column_order=["Status_Icon", "KPI_Name", "Unit", "Target", "Actual", "Progress_Ratio", "Owner"],
-        column_config={
-            "Status_Icon": st.column_config.TextColumn(
-                "الحالة", 
-                help="🔵 متقدم | 🟢 متحقق | 🔴 متأخر",
-                width="small"
-            ),
-            "KPI_Name": st.column_config.TextColumn("المؤشر", width="large"),
-            "Unit": st.column_config.TextColumn("الوحدة", width="small"),
-            "Target": st.column_config.NumberColumn("المستهدف", format="%.2f"),
-            "Actual": st.column_config.NumberColumn("الفعلي", format="%.2f"),
-            "Progress_Ratio": st.column_config.ProgressColumn(
-                "نسبة الأداء",
-                help="شريط يوضح مدى القرب من تحقيق الهدف",
-                format="%.0f%%",
-                min_value=0,
-                max_value=1,
-            ),
-            "Owner": st.column_config.TextColumn("المسؤول", width="medium"),
-        },
-        hide_index=True,
-        use_container_width=True,
-        height=500 # ارتفاع ثابت للقائمة الطويلة
-    )
+    # 2. عرض المجموعات
+    # الترتيب حسب المجموعات المعرفة
+    ordered_groups = list(KPI_GROUPS.keys()) + ["مؤشرات أخرى"]
+    
+    for group in ordered_groups:
+        group_df = df_all[df_all['Category'] == group]
+        
+        if not group_df.empty:
+            st.markdown(f"#### 📌 {group}")
+            st.dataframe(
+                group_df,
+                column_order=["Status_Icon", "KPI_Name", "Unit", "Target", "Actual", "Progress_Ratio", "Owner"],
+                column_config={
+                    "Status_Icon": st.column_config.TextColumn("الحالة", width="small"),
+                    "KPI_Name": st.column_config.TextColumn("المؤشر", width="large"),
+                    "Unit": st.column_config.TextColumn("الوحدة", width="small"),
+                    "Target": st.column_config.NumberColumn("المستهدف", format="%.2f"),
+                    "Actual": st.column_config.NumberColumn("الفعلي", format="%.2f"),
+                    "Progress_Ratio": st.column_config.ProgressColumn(
+                        "نسبة الأداء", format="%.0f%%", min_value=0, max_value=1,
+                    ),
+                    "Owner": st.column_config.TextColumn("المسؤول", width="medium"),
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+            st.markdown("---")
 
 # ================================
 # واجهة المدير (Admin)
@@ -303,7 +332,7 @@ def admin_view(sh, user_name):
     except Exception as e:
         st.error(f"خطأ في تحميل الملخص: {e}")
 
-    tab1, tab2 = st.tabs(["📋 تفاصيل المبادرات", "📊 مؤشرات الأداء (Scorecard)"])
+    tab1, tab2 = st.tabs(["📋 تفاصيل المبادرات", "📊 مؤشرات الأداء (بالمجموعات)"])
     
     # --- تبويب المبادرات ---
     with tab1:
@@ -377,7 +406,7 @@ def admin_view(sh, user_name):
         except Exception as e:
             st.error(f"خطأ تحميل: {e}")
 
-    # --- تبويب المؤشرات (Scorecard Mode) ---
+    # --- تبويب المؤشرات (Categorized) ---
     with tab2:
         try:
             ws_kpi = sh.worksheet("KPIs")
@@ -389,17 +418,26 @@ def admin_view(sh, user_name):
             df_kpi['Target'] = df_kpi['Target'].apply(safe_float)
             df_kpi['Actual'] = df_kpi['Actual'].apply(safe_float)
             
-            # 1. عرض الـ Scorecard للقراءة والتحليل السريع
-            draw_kpi_scorecard(df_kpi)
+            # 1. عرض الـ Scorecard بالمجموعات
+            draw_categorized_scorecards(df_kpi)
 
             st.markdown("---")
             st.markdown("#### ✏️ تحديث البيانات والملاحظات")
             
-            # 2. جدول التحرير (لإدخال الملاحظات والتعديل)
-            df_kpi['New_Admin_Note'] = ""
+            # فلترة لتسهيل التعديل
+            filter_cat = st.selectbox("📂 فلترة التعديل حسب المجموعة:", ["الكل"] + list(KPI_GROUPS.keys()))
+            
+            df_kpi['Category'] = df_kpi['KPI_Name'].apply(get_kpi_category)
+            
+            if filter_cat != "الكل":
+                df_for_edit = df_kpi[df_kpi['Category'] == filter_cat].copy()
+            else:
+                df_for_edit = df_kpi.copy()
+
+            df_for_edit['New_Admin_Note'] = ""
             
             edited_kpi = st.data_editor(
-                df_kpi, 
+                df_for_edit, 
                 num_rows="fixed", 
                 use_container_width=True, 
                 key="kpi_editor_admin",
@@ -411,9 +449,9 @@ def admin_view(sh, user_name):
                      "Owner_Comment": st.column_config.TextColumn("ملاحظات المالك", width="medium"),
                      "Admin_Comment": st.column_config.TextColumn("سجل المدير", width="medium"),
                      "New_Admin_Note": st.column_config.TextColumn("✍️ ملاحظة جديدة", width="large"),
-                     "Unit": None, "Direction": None, "Frequency": None 
+                     "Category": None, "Unit": None, "Direction": None, "Frequency": None 
                 },
-                disabled=["KPI_Name", "Actual", "Owner", "Owner_Comment", "Admin_Comment", "Unit", "Direction", "Frequency"]
+                disabled=["KPI_Name", "Actual", "Owner", "Owner_Comment", "Admin_Comment", "Category"]
             )
             
             if st.button("💾 حفظ تحديثات المؤشرات"):
@@ -686,8 +724,8 @@ def viewer_view(sh, user_name):
         df_kpi['Target'] = df_kpi['Target'].apply(safe_float)
         df_kpi['Actual'] = df_kpi['Actual'].apply(safe_float)
         
-        # استخدام الـ Scorecard للمشاهد أيضاً ليكون العرض موحداً
-        draw_kpi_scorecard(df_kpi)
+        # استخدام الـ Scorecard المبوب
+        draw_categorized_scorecards(df_kpi)
         
     except Exception as e:
         st.error(f"خطأ في تحميل بيانات المؤشرات: {e}")
@@ -741,6 +779,6 @@ else:
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 25.0 (NMCC - 2026: Enhanced Scorecard)
+    System Version: 26.0 (NMCC - 2026: Categorized KPIs)
 </div>
 """, unsafe_allow_html=True)
