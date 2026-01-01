@@ -36,12 +36,37 @@ st.markdown("""
         text-align: center;
     }
 
-    /* --- التعديل هنا: تنسيق عناوين البطاقات (المبادرات، الأنشطة...) --- */
-    div[data-testid="stMetricLabel"] {
-        font-size: 20px !important;      /* تكبير الخط */
-        color: #0068c9 !important;       /* اللون الأزرق */
-        font-weight: bold !important;    /* خط عريض */
-        justify-content: center;
+    /* --------------------------------------------------------------- */
+    /* تخصيص ألوان البطاقات بشكل منفرد (بناءً على ترتيب الأعمدة) */
+    
+    /* العمود 1: المبادرات (أزرق) */
+    div[data-testid="column"]:nth-of-type(1) div[data-testid="stMetricLabel"] p {
+        font-size: 20px !important;
+        font-weight: 700 !important;
+        color: #0068c9 !important; 
+    }
+
+    /* العمود 2: الأنشطة (أرجواني) */
+    div[data-testid="column"]:nth-of-type(2) div[data-testid="stMetricLabel"] p {
+        font-size: 20px !important;
+        font-weight: 700 !important;
+        color: #6f42c1 !important; 
+    }
+
+    /* العمود 3: متوسط الإنجاز (أخضر غامق) */
+    div[data-testid="column"]:nth-of-type(3) div[data-testid="stMetricLabel"] p {
+        font-size: 20px !important;
+        font-weight: 700 !important;
+        color: #198754 !important; 
+    }
+
+    /* العمود 4: أنشطة متأخرة (أحمر للتحذير) */
+    div[data-testid="column"]:nth-of-type(4) div[data-testid="stMetricLabel"] p {
+        font-size: 20px !important;
+        font-weight: 700 !important;
+        color: #dc3545 !important; 
+    }
+    /* --------------------------------------------------------------- */
     }
     /* --------------------------------------------------------------- */
 
@@ -504,3 +529,4 @@ st.markdown("""
     System Version: 15.0 (Blue Labels Fixed)
 </div>
 """, unsafe_allow_html=True)
+
