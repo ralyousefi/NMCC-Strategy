@@ -28,7 +28,7 @@ st.markdown("""
     
     /* تنسيق بطاقات الأداء (KPI Cards) */
     div[data-testid="stMetric"] {
-        background-color: #ffffff;
+        background-color: #0068c9;
         border: 1px solid #e6e6e6;
         padding: 15px;
         border-radius: 10px;
@@ -504,3 +504,4 @@ st.markdown("""
     System Version: 15.0
 </div>
 """, unsafe_allow_html=True)
+
