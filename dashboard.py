@@ -300,13 +300,13 @@ def display_kpi_layout(df_all):
     # الصف الأول
     col1, col2 = st.columns(2)
     with col1:
-        plot_group_barchart(g1, "مجموعة QI4SD")
+        plot_group_barchart(g1, "QI4SD")
     with col2:
-        plot_group_barchart(g2, "مجموعة البحث والتطوير")
+        plot_group_barchart(g2, "البحث والتطوير")
         
     # الصف الثاني
     st.markdown("---")
-    plot_group_barchart(g3, "مجموعة الكفاءة التشغيلية")
+    plot_group_barchart(g3, "الكفاءة التشغيلية")
 
 # ================================
 # واجهة المدير (Admin)
@@ -786,3 +786,4 @@ st.markdown("""
     System Version: 28.0 (NMCC - 2026: Fixed Title Spacing)
 </div>
 """, unsafe_allow_html=True)
+
