@@ -26,7 +26,7 @@ st.markdown("""
     h1, h2, h3, h4, p, div, input, select, textarea, .stSelectbox, .stNumberInput {text-align: right;}
     .stDataFrame {direction: rtl;}
     
-    /* تنسيق بطاقات الأداء (KPI Cards) */
+    /* تنسيق بطاقات الأداء (KPI Cards) - الخلفية */
     div[data-testid="stMetric"] {
         background-color: #ffffff;
         border: 1px solid #e6e6e6;
@@ -36,40 +36,23 @@ st.markdown("""
         text-align: center;
     }
 
-    /* --------------------------------------------------------------- */
-    /* تخصيص ألوان البطاقات بشكل منفرد (بناءً على ترتيب الأعمدة) */
+    /* --- إصلاح المشكلة: تلوين العناوين (المبادرات، الأنشطة...) --- */
+    /* استهداف النص مباشرة لضمان تغيير اللون */
+    div[data-testid="stMetricLabel"] p {
+        font-size: 20px !important;
+        color: #0068c9 !important;      /* اللون الأزرق */
+        font-weight: 700 !important;     /* خط عريض */
+    }
     
-    /* العمود 1: المبادرات (أزرق) */
-    div[data-testid="column"]:nth-of-type(1) div[data-testid="stMetricLabel"] p {
-        font-size: 20px !important;
-        font-weight: 700 !important;
-        color: #0068c9 !important; 
+    /* في حال تغير هيكلية Streamlit، نستهدف الحاوية أيضاً كاحتياط */
+    div[data-testid="stMetricLabel"] {
+        color: #0068c9 !important;
+        font-weight: bold !important;
+        justify-content: center;
     }
+    /* ----------------------------------------------------------- */
 
-    /* العمود 2: الأنشطة (أرجواني) */
-    div[data-testid="column"]:nth-of-type(2) div[data-testid="stMetricLabel"] p {
-        font-size: 20px !important;
-        font-weight: 700 !important;
-        color: #6f42c1 !important; 
-    }
-
-    /* العمود 3: متوسط الإنجاز (أخضر غامق) */
-    div[data-testid="column"]:nth-of-type(3) div[data-testid="stMetricLabel"] p {
-        font-size: 20px !important;
-        font-weight: 700 !important;
-        color: #198754 !important; 
-    }
-
-    /* العمود 4: أنشطة متأخرة (أحمر للتحذير) */
-    div[data-testid="column"]:nth-of-type(4) div[data-testid="stMetricLabel"] p {
-        font-size: 20px !important;
-        font-weight: 700 !important;
-        color: #dc3545 !important; 
-    }
-    /* --------------------------------------------------------------- */
-    }
-    /* --------------------------------------------------------------- */
-
+    /* تنسيق الأرقام */
     div[data-testid="stMetricValue"] {
         font-size: 28px;
         color: #0068c9;
@@ -491,42 +474,9 @@ def owner_view(sh, user_name, my_initiatives_str):
     except Exception as e:
         st.error(f"خطأ: {e}")
 
-# ---------------------------------------------------------
-# 5. التشغيل
-# ---------------------------------------------------------
-if not st.session_state['logged_in']:
-    login()
-else:
-    with st.sidebar:
-        # --- مكان الشعار (Logo) ---
-        st.image("https://upload.wikimedia.org/wikipedia/en/thumb/f/f6/Saudi_Vision_2030_logo.svg/1200px-Saudi_Vision_2030_logo.svg.png", use_container_width=True)
-        
-        st.write("---")
-        st.write(f"### 👤 {st.session_state['user_info']['name']}")
-        st.caption(f"الدور: {st.session_state['user_info']['role']}")
-        
-        if st.button("تسجيل الخروج", use_container_width=True):
-            st.session_state['logged_in'] = False
-            st.rerun()
-            
-    try:
-        connection = get_sheet_connection()
-        role = str(st.session_state['user_info']['role']).strip().title()
-        
-        if role == 'Admin':
-            admin_view(connection, st.session_state['user_info']['name'])
-        elif role == 'Owner':
-            owner_view(connection, st.session_state['user_info']['name'], st.session_state['user_info']['assigned_initiative'])
-        else:
-            st.error(f"⚠️ خطأ: الدور '{role}' غير معروف.")
-            
-    except Exception as e:
-        st.error(f"خطأ غير متوقع: {e}")
-
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 15.0 (Blue Labels Fixed)
+    System Version: 15.1 (Forced Blue Text)
 </div>
 """, unsafe_allow_html=True)
-
