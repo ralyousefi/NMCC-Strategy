@@ -425,7 +425,7 @@ def owner_view(sh, user_name, my_initiatives_str):
                     # ---------------------------------------------
                     
                     st.markdown("#### 📎 الروابط والملاحظات")
-                    st.caption("لإرفاق ملف، يرجى وضع رابط سحابي (Google Drive, OneDrive).")
+                    st.caption("لإرفاق ملف، يرجى وضع رابط سحابي (Google Drive, OneDrive, Nextcloud).")
                     ext_link = st.text_input("رابط الدليل (URL)", value=str(row['Evidence_Link']))
                     owner_cmt = st.text_area("ردك للإدارة / ملاحظات", value=str(row['Owner_Comment']))
                     
@@ -513,3 +513,4 @@ st.markdown("""
     System Version: 16.0 (Layout Updated)
 </div>
 """, unsafe_allow_html=True)
+
