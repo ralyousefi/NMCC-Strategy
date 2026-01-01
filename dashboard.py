@@ -36,14 +36,18 @@ st.markdown("""
         text-align: center;
     }
 
-    /* --- التعديل هنا: تنسيق عناوين البطاقات (المبادرات، الأنشطة...) --- */
+    /* --- التعديل 1: تكبير الخط وتلوينه بالأزرق ليطابق الأرقام --- */
     div[data-testid="stMetricLabel"] {
-        font-size: 20px !important;      /* تكبير الخط */
-        color: #0068c9 !important;       /* اللون الأزرق */
-        font-weight: bold !important;    /* خط عريض */
         justify-content: center;
     }
-    /* --------------------------------------------------------------- */
+    
+    /* استهداف النص الداخلي بدقة */
+    div[data-testid="stMetricLabel"] p {
+        font-size: 24px !important;      /* حجم كبير مقارب للأرقام */
+        color: #0068c9 !important;       /* اللون الأزرق */
+        font-weight: 800 !important;     /* خط عريض جداً */
+    }
+    /* ----------------------------------------------------------- */
 
     div[data-testid="stMetricValue"] {
         font-size: 28px;
@@ -191,8 +195,22 @@ def login():
 
 # --- واجهة الأدمن (محسنة) ---
 def admin_view(sh, user_name):
-    st.title(f"لوحة القيادة التنفيذية - {user_name}")
+    # --- التعديل 2: وضع العنوان والصورة بجانب بعضهما ---
+    col_header, col_logo = st.columns([4, 1]) # تقسيم الصفحة: جزء كبير للعنوان وجزء صغير للصورة
     
+    with col_header:
+        st.title(f"لوحة القيادة التنفيذية - {user_name}")
+    
+    with col_logo:
+        # تأكد من رفع صورة باسم logo.png أو قم بتغيير الاسم هنا
+        image_path = "logo.png" 
+        if os.path.exists(image_path):
+            st.image(image_path, use_container_width=True)
+        else:
+            # رسالة تظهر فقط إذا لم يتم العثور على الصورة
+            st.warning("⚠️ الصورة غير موجودة (logo.png)")
+    # ---------------------------------------------------
+
     # تحميل البيانات مرة واحدة لاستخدامها في البطاقات والجداول
     try:
         ws_acts = sh.worksheet("Activities")
@@ -501,6 +519,6 @@ else:
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 15.0 (Blue Labels Fixed)
+    System Version: 15.3 (Fixed Labels & Header Image)
 </div>
 """, unsafe_allow_html=True)
