@@ -634,6 +634,6 @@ else:
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 22.1 (اهداء للحب افنان)
+    System Version: 22.1 (NMCC - 2026)
 </div>
 """, unsafe_allow_html=True)
