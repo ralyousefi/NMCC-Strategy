@@ -99,7 +99,7 @@ st.markdown("""
 # ---------------------------------------------------------
 KPI_GROUPS = {
     "QI4SD": [
-        "QI4SD - Metrology", # تمت الإضافة
+        "QI4SD - Metrology",
         "CMC",
         "B of CMC",
         "ILC",
@@ -231,7 +231,7 @@ def login():
 # 5. واجهات المستخدمين
 # ---------------------------------------------------------
 
-# --- دالة رسم Bar Chart لمجموعة محددة ---
+# --- دالة رسم Bar Chart لمجموعة محددة (معدلة للفصل بين العنوان والرسم) ---
 def plot_group_barchart(df, group_title):
     if df.empty:
         st.info(f"لا توجد مؤشرات في مجموعة: {group_title}")
@@ -276,11 +276,13 @@ def plot_group_barchart(df, group_title):
     ))
 
     fig.update_layout(
-        title=dict(text=f"📊 {group_title}", x=0.5, xanchor='center'),
+        # إضافة <br> لإجبار سطر جديد تحت العنوان
+        title=dict(text=f"📊 {group_title}<br><span style='font-size:10px; color:transparent'>.</span>", x=0.5, xanchor='center'),
         barmode='overlay',                
         bargap=0.4,
         yaxis=dict(showgrid=True, gridcolor='lightgrey'),
-        margin=dict(t=50, b=50, l=20, r=20),
+        # زيادة الهامش العلوي (t) من 50 إلى 100 للفصل بين العنوان والعناصر
+        margin=dict(t=100, b=50, l=20, r=20),
         legend=dict(orientation="h", y=1.1, x=0.5, xanchor='center')
     )
     
@@ -291,27 +293,20 @@ def display_kpi_layout(df_all):
     # تصنيف البيانات
     df_all['Category'] = df_all['KPI_Name'].apply(get_kpi_category)
     
-    # تقسيم البيانات حسب المجموعات
     g1 = df_all[df_all['Category'] == "QI4SD"]
     g2 = df_all[df_all['Category'] == "البحث والتطوير"]
     g3 = df_all[df_all['Category'] == "الكفاءة التشغيلية"]
     
-    # --- الصف الأول: عمودين ---
-    # بسبب اتجاه RTL: العمود الأول (يمين) هو col1، الثاني (يسار) هو col2
+    # الصف الأول
     col1, col2 = st.columns(2)
-    
     with col1:
-        # المجموعة الأولى (يمين)
-        plot_group_barchart(g1, "QI4SD")
-        
+        plot_group_barchart(g1, "مجموعة QI4SD")
     with col2:
-        # المجموعة الثانية (يسار)
-        plot_group_barchart(g2, "البحث والتطوير")
+        plot_group_barchart(g2, "مجموعة البحث والتطوير")
         
-    # --- الصف الثاني: عمود كامل ---
+    # الصف الثاني
     st.markdown("---")
-    # المجموعة الثالثة (أسفل)
-    plot_group_barchart(g3, "الكفاءة التشغيلية")
+    plot_group_barchart(g3, "مجموعة الكفاءة التشغيلية")
 
 # ================================
 # واجهة المدير (Admin)
@@ -788,7 +783,6 @@ else:
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 27.0 (NMCC - 2026: Categorized Bar Charts Layout)
+    System Version: 28.0 (NMCC - 2026: Fixed Title Spacing)
 </div>
 """, unsafe_allow_html=True)
-
