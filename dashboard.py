@@ -36,14 +36,12 @@ st.markdown("""
         text-align: center;
     }
 
-    /* --- التعديل هنا: تنسيق عناوين البطاقات (المبادرات، الأنشطة...) --- */
     div[data-testid="stMetricLabel"] {
-        font-size: 20px !important;      /* تكبير الخط */
-        color: #0068c9 !important;       /* اللون الأزرق */
-        font-weight: bold !important;    /* خط عريض */
+        font-size: 20px !important;      
+        color: #0068c9 !important;       
+        font-weight: bold !important;    
         justify-content: center;
     }
-    /* --------------------------------------------------------------- */
 
     div[data-testid="stMetricValue"] {
         font-size: 28px;
@@ -107,7 +105,6 @@ SHEET_ID = "11tKfYa-Sqa96wDwQvMvChgRWaxgMRAWAIvul7p27ayY"
 def get_creds():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     
-    # 1. المحاولة الأولى: Secrets (للموقع أونلاين)
     try:
         if st.secrets is not None and 'gcp_service_account' in st.secrets:
             creds_dict = dict(st.secrets["gcp_service_account"])
@@ -117,7 +114,6 @@ def get_creds():
     except Exception:
         pass
 
-    # 2. المحاولة الثانية: الملف المحلي (لـ Codespaces)
     json_key_file = "credentials.json"
     if os.path.exists(json_key_file):
         return ServiceAccountCredentials.from_json_keyfile_name(json_key_file, scope)
@@ -189,47 +185,36 @@ def login():
 # 4. واجهات المستخدمين
 # ---------------------------------------------------------
 
-# --- واجهة الأدمن (محسنة) ---
+# --- واجهة الأدمن ---
 def admin_view(sh, user_name):
-    st.title(f"لوحة القيادة التنفيذية - {user_name}")
+    st.markdown("### 📊 نظرة عامة")
     
-    # تحميل البيانات مرة واحدة لاستخدامها في البطاقات والجداول
     try:
         ws_acts = sh.worksheet("Activities")
         df_acts = pd.DataFrame(ws_acts.get_all_records())
         
-        # --- 1. بطاقات الأداء العلوية (KPI Cards) ---
         if not df_acts.empty:
-            st.markdown("### 📊 نظرة عامة")
-            
-            # تجهيز الحسابات
             df_acts['Progress'] = df_acts['Progress'].apply(safe_int)
-            total_initiatives = df_acts['Mabadara'].nunique() # عدد المبادرات الفريدة
-            total_activities = len(df_acts) # عدد الأنشطة
-            avg_progress = df_acts['Progress'].mean() # متوسط الإنجاز
+            total_initiatives = df_acts['Mabadara'].nunique()
+            total_activities = len(df_acts)
+            avg_progress = df_acts['Progress'].mean()
             
-            # حساب المتأخرات
             today = datetime.now().date()
-            # نحول عمود التاريخ لنتأكد من المقارنة الصحيحة
             df_acts['End_Date_DT'] = pd.to_datetime(df_acts['End_Date'], errors='coerce').dt.date
-            # الشرط: الإنجاز أقل من 100% والتاريخ فات
             delayed_count = len(df_acts[(df_acts['Progress'] < 100) & (df_acts['End_Date_DT'] < today)])
 
-            # عرض البطاقات
             k1, k2, k3, k4 = st.columns(4)
             k1.metric("📦 المبادرات", total_initiatives)
             k2.metric("📝 الأنشطة", total_activities)
             k3.metric("📈 متوسط الإنجاز", f"{avg_progress:.1f}%")
-            k4.metric("🚨 أنشطة متأخرة", delayed_count, delta_color="inverse") # inverse يجعله أحمر إذا زاد
+            k4.metric("🚨 أنشطة متأخرة", delayed_count, delta_color="inverse")
 
             st.markdown("---")
-    
     except Exception as e:
         st.error(f"خطأ في تحميل الملخص: {e}")
 
     tab1, tab2 = st.tabs(["📋 تفاصيل المبادرات", "📊 مؤشرات الأداء (KPIs)"])
     
-    # 1. متابعة المبادرات
     with tab1:
         try:
             if 'Admin_Comment' not in df_acts.columns:
@@ -247,7 +232,7 @@ def admin_view(sh, user_name):
                         "Progress": st.column_config.ProgressColumn("الإنجاز %", format="%d%%", min_value=0, max_value=100),
                         "Admin_Comment": st.column_config.TextColumn("ملاحظات المدير", width="medium"),
                         "Owner_Comment": st.column_config.TextColumn("رد الموظف", disabled=True),
-                        "End_Date_DT": None # إخفاء عمود الحسابات المساعد
+                        "End_Date_DT": None 
                     },
                     disabled=["Mabadara", "Activity", "Start_Date", "End_Date", "Progress", "Evidence_Link", "Owner_Comment"],
                     use_container_width=True,
@@ -258,7 +243,6 @@ def admin_view(sh, user_name):
                 if st.button("💾 حفظ الملاحظات"):
                     with st.spinner("جاري حفظ الملاحظات..."):
                         try:
-                            # حذف العمود المساعد قبل الحفظ
                             if 'End_Date_DT' in df_acts.columns:
                                 df_acts = df_acts.drop(columns=['End_Date_DT'])
 
@@ -277,7 +261,6 @@ def admin_view(sh, user_name):
         except Exception as e:
             st.error(f"خطأ تحميل: {e}")
 
-    # 2. المؤشرات
     with tab2:
         try:
             ws_kpi = sh.worksheet("KPIs")
@@ -318,15 +301,15 @@ def admin_view(sh, user_name):
                     y=edited_kpi['Actual'], 
                     name='الفعلي', 
                     marker_color=status_colors,
-                    text=edited_kpi['Actual'],      
-                    textposition='inside',          
-                    width=0.5                       
+                    text=edited_kpi['Actual'],       
+                    textposition='inside',           
+                    width=0.5                        
                 ))
                 
                 fig.add_trace(go.Scatter(
                     x=edited_kpi['KPI_Name'], 
                     y=edited_kpi['Target'], 
-                    mode='markers',                 
+                    mode='markers',                  
                     name='المستهدف', 
                     marker=dict(symbol='line-ew', size=50, color='black', line=dict(width=3)), 
                 ))
@@ -335,8 +318,8 @@ def admin_view(sh, user_name):
                     title="مقارنة الأداء (الفعلي vs المستهدف)",
                     xaxis_title="المؤشر",
                     yaxis_title="القيمة",
-                    barmode='overlay',               
-                    bargap=0.4,                      
+                    barmode='overlay',                
+                    bargap=0.4,                       
                     legend=dict(orientation="h", y=1.1, x=0.5, xanchor='center'),
                     yaxis=dict(showgrid=True, gridcolor='lightgrey'),
                 )
@@ -345,9 +328,10 @@ def admin_view(sh, user_name):
         except Exception as e:
             st.error(f"خطأ KPI: {e}")
 
-# --- واجهة المالك ---
+# --- واجهة المالك (Owner View) ---
 def owner_view(sh, user_name, my_initiatives_str):
-    st.title(f"مرحباً، {user_name} 👋")
+    # لا حاجة لعنوان هنا لأنه موجود في الهيدر الرئيسي الآن، لكن يمكن تركه كترحيب
+    # st.title(f"مرحباً، {user_name} 👋")
     
     if my_initiatives_str:
         my_list = [x.strip() for x in str(my_initiatives_str).split(',') if x.strip() != '']
@@ -422,13 +406,23 @@ def owner_view(sh, user_name, my_initiatives_str):
 
                 with st.form("update_form"):
                     st.markdown("#### 📝 تحديث البيانات")
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        curr_prog = safe_int(row['Progress'])
-                        new_prog = st.slider("نسبة الإنجاز %", 0, 100, curr_prog)
-                    with c2:
-                        new_start = st.date_input("البداية", value=parse_date(row['Start_Date']))
-                        new_end = st.date_input("النهاية", value=parse_date(row['End_Date']))
+                    
+                    # --- التعديل 2: إعادة هيكلة صندوق البيانات ---
+                    # 1. التواريخ في الأعلى
+                    # بسبب الاتجاه RTL: العمود الأول (يمين) للبداية، العمود الثاني (يسار) للنهاية
+                    col_date_right, col_date_left = st.columns(2)
+                    
+                    with col_date_right:
+                         new_start = st.date_input("البداية", value=parse_date(row['Start_Date']))
+                    
+                    with col_date_left:
+                         new_end = st.date_input("النهاية", value=parse_date(row['End_Date']))
+                    
+                    # 2. نسبة الإنجاز تحتهم (بعرض كامل)
+                    st.write("") # مسافة جمالية
+                    curr_prog = safe_int(row['Progress'])
+                    new_prog = st.slider("نسبة الإنجاز %", 0, 100, curr_prog)
+                    # ---------------------------------------------
                     
                     st.markdown("#### 📎 الروابط والملاحظات")
                     st.caption("لإرفاق ملف، يرجى وضع رابط سحابي (Google Drive, OneDrive).")
@@ -472,23 +466,38 @@ def owner_view(sh, user_name, my_initiatives_str):
 if not st.session_state['logged_in']:
     login()
 else:
-    with st.sidebar:
-        # --- مكان الشعار (Logo) ---
-        st.image("https://upload.wikimedia.org/wikipedia/en/thumb/f/f6/Saudi_Vision_2030_logo.svg/1200px-Saudi_Vision_2030_logo.svg.png", use_container_width=True)
+    # --- التعديل 1: حذف Sidebar ووضع الهيدر العلوي ---
+    # إنشاء حاوية علوية للمعلومات وزر الخروج
+    with st.container():
+        # تقسيم الأعمدة:
+        # col_info: يمين (معلومات المستخدم)
+        # col_space: وسط (فراغ)
+        # col_logout: يسار (زر الخروج)
+        # ملاحظة: لأن الاتجاه RTL، فإن العمود الأول يظهر على اليمين.
+        col_info, col_space, col_logout = st.columns([3, 5, 1])
         
-        st.write("---")
-        st.write(f"### 👤 {st.session_state['user_info']['name']}")
-        st.caption(f"الدور: {st.session_state['user_info']['role']}")
-        
-        if st.button("تسجيل الخروج", use_container_width=True):
-            st.session_state['logged_in'] = False
-            st.rerun()
+        with col_info:
+            user_name = st.session_state['user_info']['name']
+            user_role = st.session_state['user_info']['role']
+            st.markdown(f"### 👤 {user_name}")
+            st.caption(f"الدور: {user_role}")
             
+        with col_logout:
+            st.write("") # محاذاة عمودية بسيطة
+            if st.button("تسجيل الخروج", use_container_width=True):
+                st.session_state['logged_in'] = False
+                st.rerun()
+    
+    st.write("---") # خط فاصل
+    # ---------------------------------------------------
+
     try:
         connection = get_sheet_connection()
         role = str(st.session_state['user_info']['role']).strip().title()
         
         if role == 'Admin':
+            # نمرر اسم المستخدم للعنوان
+            st.title(f"لوحة القيادة التنفيذية - {st.session_state['user_info']['name']}")
             admin_view(connection, st.session_state['user_info']['name'])
         elif role == 'Owner':
             owner_view(connection, st.session_state['user_info']['name'], st.session_state['user_info']['assigned_initiative'])
@@ -501,6 +510,6 @@ else:
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 15.0 (Blue Labels Fixed)
+    System Version: 16.0 (Layout Updated)
 </div>
 """, unsafe_allow_html=True)
