@@ -28,7 +28,7 @@ st.markdown("""
     
     /* تنسيق بطاقات الأداء (KPI Cards) */
     div[data-testid="stMetric"] {
-        background-color: #0068c9;
+        background-color: #ffffff;
         border: 1px solid #e6e6e6;
         padding: 15px;
         border-radius: 10px;
@@ -501,7 +501,6 @@ else:
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 15.0
+    System Version: 15.0 (Blue Labels Fixed)
 </div>
 """, unsafe_allow_html=True)
-
