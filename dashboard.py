@@ -231,7 +231,7 @@ def login():
 # 5. واجهات المستخدمين
 # ---------------------------------------------------------
 
-# --- دالة رسم Bar Chart لمجموعة محددة (معدلة للفصل بين العنوان والرسم) ---
+# --- دالة رسم Bar Chart لمجموعة محددة ---
 def plot_group_barchart(df, group_title):
     if df.empty:
         st.info(f"لا توجد مؤشرات في مجموعة: {group_title}")
@@ -281,7 +281,7 @@ def plot_group_barchart(df, group_title):
         barmode='overlay',                
         bargap=0.4,
         yaxis=dict(showgrid=True, gridcolor='lightgrey'),
-        # زيادة الهامش العلوي (t) من 50 إلى 100 للفصل بين العنوان والعناصر
+        # زيادة الهامش العلوي (t)
         margin=dict(t=100, b=50, l=20, r=20),
         legend=dict(orientation="h", y=1.1, x=0.5, xanchor='center')
     )
@@ -502,7 +502,7 @@ def admin_view(sh, user_name):
             st.error(f"خطأ KPI: {e}")
 
 # ================================
-# واجهة المالك (Owner)
+# واجهة المالك (Owner) - (تحديث: إضافة تبويب كافة المؤشرات)
 # ================================
 def owner_view(sh, user_name, my_initiatives_str):
     if my_initiatives_str:
@@ -510,16 +510,38 @@ def owner_view(sh, user_name, my_initiatives_str):
     else:
         my_list = []
 
+    # تحميل البيانات مرة واحدة لاستخدامها في التبويبات
     try:
         ws_acts = sh.worksheet("Activities")
         all_data = pd.DataFrame(ws_acts.get_all_records())
+        # تنظيف بيانات الأنشطة
         all_data['Mabadara'] = all_data['Mabadara'].astype(str).str.strip()
         all_data['Activity'] = all_data['Activity'].astype(str).str.strip()
         if 'Admin_Comment' not in all_data.columns: all_data['Admin_Comment'] = ""
         if 'Owner_Comment' not in all_data.columns: all_data['Owner_Comment'] = ""
-
+        
         my_data = all_data[all_data['Mabadara'].isin(my_list)].copy()
 
+        # تحميل بيانات المؤشرات
+        ws_kpi = sh.worksheet("KPIs")
+        df_kpi = pd.DataFrame(ws_kpi.get_all_records())
+        
+        # تنظيف بيانات المؤشرات
+        for col in ['Admin_Comment', 'Owner_Comment', 'Owner']:
+            if col not in df_kpi.columns: df_kpi[col] = ""
+        
+        df_kpi['Target'] = df_kpi['Target'].apply(safe_float)
+        df_kpi['Actual'] = df_kpi['Actual'].apply(safe_float)
+
+    except Exception as e:
+        st.error(f"خطأ في تحميل البيانات: {e}")
+        return
+
+    # --- إنشاء التبويبات ---
+    tab1, tab2, tab3 = st.tabs(["📋 تحديث الأنشطة", "✏️ تحديث مؤشراتي", "📊 كافة المؤشرات (للاطلاع)"])
+
+    # 1. تبويب تحديث الأنشطة
+    with tab1:
         st.markdown("### 📌 تحديث أنشطة المبادرات")
         if not my_list:
             st.warning("⚠️ لا توجد مبادرات مسندة إليك.")
@@ -555,7 +577,6 @@ def owner_view(sh, user_name, my_initiatives_str):
                     with st.expander("⚙️ إعدادات النشاط (تعديل الاسم / حذف)"):
                         st.info("تنبيه: هذه الإجراءات تؤثر على هيكل النشاط.")
                         c_edit, c_delete = st.columns(2)
-                        
                         with c_edit:
                             st.markdown("##### ✏️ تعديل مسمى النشاط")
                             new_name_val = st.text_input("الاسم الجديد", value=sel_act_name, key="rename_act")
@@ -568,12 +589,9 @@ def owner_view(sh, user_name, my_initiatives_str):
                                             st.success("تم تعديل الاسم بنجاح!")
                                             time.sleep(1)
                                             st.rerun()
-                                        else:
-                                            st.error("لم يتم العثور على الخلية.")
-                                    except Exception as e:
-                                        st.error(f"حدث خطأ: {e}")
-                                else:
-                                    st.warning("الاسم الجديد مطابق للاسم الحالي.")
+                                        else: st.error("لم يتم العثور على الخلية.")
+                                    except Exception as e: st.error(f"حدث خطأ: {e}")
+                                else: st.warning("الاسم الجديد مطابق للاسم الحالي.")
 
                         with c_delete:
                             st.markdown("##### 🗑️ حذف النشاط")
@@ -586,10 +604,8 @@ def owner_view(sh, user_name, my_initiatives_str):
                                         st.success("تم حذف النشاط.")
                                         time.sleep(1)
                                         st.rerun()
-                                    else:
-                                        st.error("لم يتم العثور على النشاط.")
-                                except Exception as e:
-                                    st.error(f"خطأ في الحذف: {e}")
+                                    else: st.error("لم يتم العثور على النشاط.")
+                                except Exception as e: st.error(f"خطأ في الحذف: {e}")
 
                     if str(row.get('Admin_Comment', '')).strip():
                         st.markdown(f"<div class='admin-alert-box'>📢 <strong>ملاحظة من المدير:</strong><div class='history-box'>{row['Admin_Comment']}</div></div>", unsafe_allow_html=True)
@@ -597,10 +613,8 @@ def owner_view(sh, user_name, my_initiatives_str):
                     with st.form("update_form"):
                         st.markdown("#### 📝 بيانات النشاط")
                         col_start, col_end, col_prog = st.columns(3)
-                        with col_start:
-                             new_start = st.date_input("تاريخ البداية", value=parse_date(row['Start_Date']))
-                        with col_end:
-                             new_end = st.date_input("تاريخ النهاية", value=parse_date(row['End_Date']))
+                        with col_start: new_start = st.date_input("تاريخ البداية", value=parse_date(row['Start_Date']))
+                        with col_end: new_end = st.date_input("تاريخ النهاية", value=parse_date(row['End_Date']))
                         with col_prog:
                              curr_prog = safe_int(row['Progress'])
                              new_prog = st.number_input("نسبة الإنجاز %", min_value=0, max_value=100, value=curr_prog, step=1)
@@ -610,10 +624,8 @@ def owner_view(sh, user_name, my_initiatives_str):
                         
                         st.markdown("📜 **سجل الملاحظات السابق:**")
                         prev_notes = str(row['Owner_Comment'])
-                        if prev_notes:
-                            st.markdown(f"<div class='history-box'>{prev_notes}</div>", unsafe_allow_html=True)
-                        else:
-                            st.caption("لا توجد ملاحظات سابقة.")
+                        if prev_notes: st.markdown(f"<div class='history-box'>{prev_notes}</div>", unsafe_allow_html=True)
+                        else: st.caption("لا توجد ملاحظات سابقة.")
 
                         new_note = st.text_area("✍️ إضافة ملاحظة جديدة (سيتم حفظها مع التاريخ والوقت تلقائياً)", height=100)
                         
@@ -640,79 +652,70 @@ def owner_view(sh, user_name, my_initiatives_str):
                                     time.sleep(1)
                                     st.rerun()
                             except Exception as e: st.error(f"خطأ حفظ: {e}")
-    except Exception as e:
-        st.error(f"خطأ في بيانات الأنشطة: {e}")
 
-    st.markdown("---")
-
-    st.markdown("### 📈 تحديث مؤشرات الأداء المسندة لي")
-    try:
-        ws_kpi = sh.worksheet("KPIs")
-        df_kpi = pd.DataFrame(ws_kpi.get_all_records())
+    # 2. تبويب تحديث مؤشراتي
+    with tab2:
+        st.markdown("### 📈 تحديث مؤشرات الأداء المسندة لي")
         
-        if 'Owner' not in df_kpi.columns:
-            st.warning("⚠️ عمود 'Owner' مفقود في ملف المؤشرات.")
+        current_email = st.session_state['user_info'].get('username', '').strip()
+        my_kpis = df_kpi[
+            (df_kpi['Owner'].astype(str).str.strip() == current_email) | 
+            (df_kpi['Owner'].astype(str).str.strip() == user_name.strip())
+        ]
+        
+        if my_kpis.empty:
+            st.info("لا توجد مؤشرات أداء مرتبطة بحسابك حالياً.")
         else:
-            if 'Owner_Comment' not in df_kpi.columns:
-                df_kpi['Owner_Comment'] = ""
-                
-            current_email = st.session_state['user_info'].get('username', '').strip()
-            my_kpis = df_kpi[
-                (df_kpi['Owner'].astype(str).str.strip() == current_email) | 
-                (df_kpi['Owner'].astype(str).str.strip() == user_name.strip())
-            ]
+            st.caption("قم باختيار المؤشر لتحديث قيمته وإضافة ملاحظاتك.")
+            sel_kpi_name = st.selectbox("اختر المؤشر", my_kpis['KPI_Name'].unique())
             
-            if my_kpis.empty:
-                st.info("لا توجد مؤشرات أداء مرتبطة بحسابك حالياً.")
-            else:
-                st.caption("قم باختيار المؤشر لتحديث قيمته وإضافة ملاحظاتك.")
-                sel_kpi_name = st.selectbox("اختر المؤشر", my_kpis['KPI_Name'].unique())
-                
-                if sel_kpi_name:
-                    kpi_row = my_kpis[my_kpis['KPI_Name'] == sel_kpi_name].iloc[0]
-                    k1, k2, k3 = st.columns(3)
-                    k1.metric("المستهدف", kpi_row['Target'])
-                    k2.metric("المتحقق الحالي", kpi_row['Actual'])
-                    k3.metric("الوحدة", kpi_row.get('Unit', '-'))
+            if sel_kpi_name:
+                kpi_row = my_kpis[my_kpis['KPI_Name'] == sel_kpi_name].iloc[0]
+                k1, k2, k3 = st.columns(3)
+                k1.metric("المستهدف", kpi_row['Target'])
+                k2.metric("المتحقق الحالي", kpi_row['Actual'])
+                k3.metric("الوحدة", kpi_row.get('Unit', '-'))
 
-                    if str(kpi_row.get('Admin_Comment', '')).strip():
-                        st.markdown(f"<div class='admin-alert-box'>📢 <strong>ملاحظات المدير:</strong><div class='history-box'>{kpi_row['Admin_Comment']}</div></div>", unsafe_allow_html=True)
+                if str(kpi_row.get('Admin_Comment', '')).strip():
+                    st.markdown(f"<div class='admin-alert-box'>📢 <strong>ملاحظات المدير:</strong><div class='history-box'>{kpi_row['Admin_Comment']}</div></div>", unsafe_allow_html=True)
 
-                    with st.form("update_kpi_form"):
-                        st.write("#### 📝 تحديث البيانات")
-                        curr_actual = safe_float(kpi_row['Actual'])
-                        new_actual = st.number_input("القيمة المتحققة (Actual)", value=curr_actual)
-                        
-                        st.write("💬 **سجل ملاحظاتك السابق:**")
-                        prev_kpi_notes = str(kpi_row.get('Owner_Comment', ''))
-                        if prev_kpi_notes:
-                            st.markdown(f"<div class='history-box'>{prev_kpi_notes}</div>", unsafe_allow_html=True)
-                        
-                        new_kpi_note = st.text_area("أضف ملاحظة جديدة للمدير (مع التاريخ التلقائي):")
+                with st.form("update_kpi_form"):
+                    st.write("#### 📝 تحديث البيانات")
+                    curr_actual = safe_float(kpi_row['Actual'])
+                    new_actual = st.number_input("القيمة المتحققة (Actual)", value=curr_actual)
+                    
+                    st.write("💬 **سجل ملاحظاتك السابق:**")
+                    prev_kpi_notes = str(kpi_row.get('Owner_Comment', ''))
+                    if prev_kpi_notes: st.markdown(f"<div class='history-box'>{prev_kpi_notes}</div>", unsafe_allow_html=True)
+                    
+                    new_kpi_note = st.text_area("أضف ملاحظة جديدة للمدير (مع التاريخ التلقائي):")
 
-                        if st.form_submit_button("💾 حفظ تحديث المؤشر"):
-                            try:
-                                sh_fresh_kpi = get_sheet_connection()
-                                ws_fresh_kpi = sh_fresh_kpi.worksheet("KPIs")
-                                df_fresh_kpi = pd.DataFrame(ws_fresh_kpi.get_all_records())
-                                if 'Owner_Comment' not in df_fresh_kpi.columns:
-                                    df_fresh_kpi['Owner_Comment'] = ""
-                                mask = df_fresh_kpi['KPI_Name'] == sel_kpi_name
-                                if mask.any():
-                                    final_kpi_comment = append_timestamped_comment(prev_kpi_notes, new_kpi_note)
-                                    df_fresh_kpi.loc[mask, 'Actual'] = new_actual
-                                    df_fresh_kpi.loc[mask, 'Owner_Comment'] = final_kpi_comment
-                                    
-                                    clean_data = clean_df_for_gspread(df_fresh_kpi)
-                                    ws_fresh_kpi.update(values=[clean_data.columns.values.tolist()] + clean_data.values.tolist(), range_name='A1')
-                                    st.success("✅ تم تحديث المؤشر والملاحظات!")
-                                    time.sleep(1)
-                                    st.rerun()
-                            except Exception as e:
-                                st.error(f"خطأ أثناء الحفظ: {e}")
+                    if st.form_submit_button("💾 حفظ تحديث المؤشر"):
+                        try:
+                            sh_fresh_kpi = get_sheet_connection()
+                            ws_fresh_kpi = sh_fresh_kpi.worksheet("KPIs")
+                            df_fresh_kpi = pd.DataFrame(ws_fresh_kpi.get_all_records())
+                            if 'Owner_Comment' not in df_fresh_kpi.columns:
+                                df_fresh_kpi['Owner_Comment'] = ""
+                            mask = df_fresh_kpi['KPI_Name'] == sel_kpi_name
+                            if mask.any():
+                                final_kpi_comment = append_timestamped_comment(prev_kpi_notes, new_kpi_note)
+                                df_fresh_kpi.loc[mask, 'Actual'] = new_actual
+                                df_fresh_kpi.loc[mask, 'Owner_Comment'] = final_kpi_comment
+                                
+                                clean_data = clean_df_for_gspread(df_fresh_kpi)
+                                ws_fresh_kpi.update(values=[clean_data.columns.values.tolist()] + clean_data.values.tolist(), range_name='A1')
+                                st.success("✅ تم تحديث المؤشر والملاحظات!")
+                                time.sleep(1)
+                                st.rerun()
+                        except Exception as e: st.error(f"خطأ أثناء الحفظ: {e}")
 
-    except Exception as e:
-        st.error(f"خطأ في بيانات المؤشرات: {e}")
+    # 3. تبويب كافة المؤشرات (الإضافة الجديدة)
+    with tab3:
+        st.markdown("### 📊 لوحة المؤشرات العامة (للاطلاع)")
+        st.caption("تعرض هذه اللوحة جميع مؤشرات أداء المركز للمتابعة العامة.")
+        # استخدام دالة العرض الموجودة مسبقاً
+        display_kpi_layout(df_kpi)
 
 # ================================
 # واجهة المشاهد (Viewer)
@@ -783,7 +786,6 @@ else:
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 28.0 (NMCC - 2026: Fixed Title Spacing)
+    System Version: 29.0 (NMCC - 2026)
 </div>
 """, unsafe_allow_html=True)
-
