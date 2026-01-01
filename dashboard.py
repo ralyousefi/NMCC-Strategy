@@ -256,7 +256,6 @@ def admin_view(sh, user_name):
                 df_filt = df_acts[df_acts['Mabadara'] == init].copy()
                 df_filt['New_Admin_Note'] = "" 
                 
-                # إعداد الجدول
                 edited_df = st.data_editor(
                     df_filt,
                     column_config={
@@ -268,7 +267,6 @@ def admin_view(sh, user_name):
                         "Evidence_Link": st.column_config.LinkColumn("رابط الدليل", display_text="📎 فتح"),
                         "Start_Date": None, "End_Date": None, "End_Date_DT": None, "Mabadara": None 
                     },
-                    # التعطيل
                     disabled=["Activity", "Progress", "Owner_Comment", "Admin_Comment", "Mabadara"],
                     hide_index=True,
                     use_container_width=True,
@@ -300,7 +298,6 @@ def admin_view(sh, user_name):
                         else:
                             st.info("لم يتم كتابة أي ملاحظات جديدة للحفظ.")
 
-                # --- عرض السجل التاريخي ---
                 st.markdown("---")
                 st.markdown("##### 📜 عرض السجل التاريخي الكامل")
                 act_for_history = st.selectbox("اختر النشاط لعرض سجله:", df_filt['Activity'].unique(), key="hist_act_sel")
@@ -401,7 +398,7 @@ def admin_view(sh, user_name):
             st.error(f"خطأ KPI: {e}")
 
 # ================================
-# واجهة المالك (Owner)
+# واجهة المالك (Owner) - تحديث: إضافة التعديل والحذف
 # ================================
 def owner_view(sh, user_name, my_initiatives_str):
     if my_initiatives_str:
@@ -425,6 +422,7 @@ def owner_view(sh, user_name, my_initiatives_str):
         else:
             sel_init = st.selectbox("اختر المبادرة", my_data['Mabadara'].unique())
             
+            # --- قسم إضافة نشاط ---
             with st.expander("➕ إضافة نشاط جديد لهذه المبادرة"):
                 with st.form("add_activity_form"):
                     new_act_name = st.text_input("اسم النشاط الجديد")
@@ -443,6 +441,7 @@ def owner_view(sh, user_name, my_initiatives_str):
                                 st.rerun()
                             except Exception as e: st.error(f"خطأ: {e}")
 
+            # --- قسم اختيار النشاط ---
             acts_in_init = my_data[my_data['Mabadara'] == sel_init]
             if not acts_in_init.empty:
                 st.markdown('<p class="step-header">اختر النشاط للتحديث</p>', unsafe_allow_html=True)
@@ -451,11 +450,61 @@ def owner_view(sh, user_name, my_initiatives_str):
                 if sel_act_name:
                     row = acts_in_init[acts_in_init['Activity'] == sel_act_name].iloc[0]
                     
+                    # --- التحديث الجديد: قسم إعدادات النشاط (تعديل/حذف) ---
+                    with st.expander("⚙️ إعدادات النشاط (تعديل الاسم / حذف)"):
+                        st.info("تنبيه: هذه الإجراءات تؤثر على هيكل النشاط.")
+                        c_edit, c_delete = st.columns(2)
+                        
+                        # 1. تعديل الاسم
+                        with c_edit:
+                            st.markdown("##### ✏️ تعديل مسمى النشاط")
+                            new_name_val = st.text_input("الاسم الجديد", value=sel_act_name, key="rename_act")
+                            if st.button("تحديث الاسم"):
+                                if new_name_val.strip() != sel_act_name:
+                                    try:
+                                        # العثور على الخلية وتحديثها
+                                        # ملاحظة: نستخدم gspread find للبحث عن الخلية
+                                        cell = ws_acts.find(sel_act_name)
+                                        if cell:
+                                            # التأكد من أنها نفس المبادرة (للدقة)
+                                            # لكن find بسيط وسريع هنا
+                                            ws_acts.update_cell(cell.row, cell.col, new_name_val)
+                                            st.success("تم تعديل الاسم بنجاح!")
+                                            time.sleep(1)
+                                            st.rerun()
+                                        else:
+                                            st.error("لم يتم العثور على الخلية.")
+                                    except Exception as e:
+                                        st.error(f"حدث خطأ: {e}")
+                                else:
+                                    st.warning("الاسم الجديد مطابق للاسم الحالي.")
+
+                        # 2. حذف النشاط
+                        with c_delete:
+                            st.markdown("##### 🗑️ حذف النشاط")
+                            st.warning("سيتم حذف النشاط وسجله بالكامل.")
+                            if st.button("تأكيد الحذف", type="primary"):
+                                try:
+                                    # نحتاج للبحث الدقيق لضمان حذف الصف الصحيح
+                                    # نستخدم الداتا فريم للحصول على رقم الصف + 2 (لأن الداتا فريم تبدأ من 0 والملف له هيدر 1)
+                                    # الطريقة الأضمن هي البحث في الشيت مباشرة
+                                    cell_del = ws_acts.find(sel_act_name)
+                                    if cell_del:
+                                        ws_acts.delete_rows(cell_del.row)
+                                        st.success("تم حذف النشاط.")
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error("لم يتم العثور على النشاط.")
+                                except Exception as e:
+                                    st.error(f"خطأ في الحذف: {e}")
+
+                    # --- استكمال نموذج التحديث العادي ---
                     if str(row.get('Admin_Comment', '')).strip():
                         st.markdown(f"<div class='admin-alert-box'>📢 <strong>ملاحظة من المدير:</strong><div class='history-box'>{row['Admin_Comment']}</div></div>", unsafe_allow_html=True)
 
                     with st.form("update_form"):
-                        st.markdown("#### 📝 بيانات النشاط")
+                        st.markdown("#### 📝 بيانات النشاط (التقدم)")
                         col_start, col_end, col_prog = st.columns(3)
                         with col_start:
                              new_start = st.date_input("تاريخ البداية", value=parse_date(row['Start_Date']))
@@ -646,6 +695,6 @@ else:
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 23.0 (NMCC - 2026)
+    System Version: 24.0 (NMCC - 2026)
 </div>
 """, unsafe_allow_html=True)
