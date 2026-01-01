@@ -178,6 +178,38 @@ def login():
 # 4. واجهات المستخدمين
 # ---------------------------------------------------------
 
+# --- دالة رسم المؤشرات (مشتركة) ---
+def draw_kpi_chart(df):
+    def get_status(row):
+        target, actual = row['Target'], row['Actual']
+        direction = row.get('Direction', 'تصاعدي') 
+        if direction == 'تنازلي': 
+            return "متقدم (أزرق)" if actual < target else "متحقق (أخضر)" if actual == target else "متأخر (أحمر)"
+        else: 
+            return "متقدم (أزرق)" if actual > target else "متحقق (أخضر)" if actual == target else "متأخر (أحمر)"
+
+    df['Status'] = df.apply(get_status, axis=1)
+    
+    fig = go.Figure()
+    status_colors = df['Status'].map({
+        "متقدم (أزرق)": "#1f77b4", "متحقق (أخضر)": "#2ca02c", "متأخر (أحمر)": "#d62728"
+    }).fillna("grey")
+
+    fig.add_trace(go.Bar(
+        x=df['KPI_Name'], y=df['Actual'], name='الفعلي', 
+        marker_color=status_colors, text=df['Actual'],       
+        textposition='inside', width=0.5                        
+    ))
+    fig.add_trace(go.Scatter(
+        x=df['KPI_Name'], y=df['Target'], mode='markers',                  
+        name='المستهدف', marker=dict(symbol='line-ew', size=50, color='black', line=dict(width=3)), 
+    ))
+    fig.update_layout(
+        title="مقارنة الأداء (الفعلي vs المستهدف)", xaxis_title="المؤشر", yaxis_title="القيمة",
+        barmode='overlay', bargap=0.4, legend=dict(orientation="h", y=1.1, x=0.5, xanchor='center')
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
 # ================================
 # واجهة المدير (Admin)
 # ================================
@@ -210,7 +242,6 @@ def admin_view(sh, user_name):
 
     tab1, tab2 = st.tabs(["📋 تفاصيل المبادرات", "📊 مؤشرات الأداء (KPIs)"])
     
-    # تبويب 1: المبادرات
     with tab1:
         try:
             if 'Admin_Comment' not in df_acts.columns: df_acts['Admin_Comment'] = ""
@@ -249,13 +280,11 @@ def admin_view(sh, user_name):
         except Exception as e:
             st.error(f"خطأ تحميل: {e}")
 
-    # تبويب 2: المؤشرات (التعديل المطلوب)
     with tab2:
         try:
             ws_kpi = sh.worksheet("KPIs")
             df_kpi = pd.DataFrame(ws_kpi.get_all_records())
             
-            # التأكد من وجود الأعمدة اللازمة
             if 'Admin_Comment' not in df_kpi.columns: df_kpi['Admin_Comment'] = ""
             if 'Owner' not in df_kpi.columns: df_kpi['Owner'] = ""
             
@@ -263,7 +292,7 @@ def admin_view(sh, user_name):
             df_kpi['Actual'] = df_kpi['Actual'].apply(safe_float)
             
             st.markdown("#### ✏️ إدارة المؤشرات")
-            st.info("💡 بصفتك مديراً: يمكنك تعديل (المستهدف) ووضع (ملاحظات)، ولكن لا يمكنك تعديل (المتحقق).")
+            st.info("💡 بصفتك مديراً: يمكنك تعديل (المستهدف) ووضع (ملاحظات).")
 
             edited_kpi = st.data_editor(
                 df_kpi, 
@@ -272,8 +301,8 @@ def admin_view(sh, user_name):
                 key="kpi_editor_admin",
                 column_config={
                      "Admin_Comment": st.column_config.TextColumn("ملاحظات المدير", width="medium"),
-                     "Actual": st.column_config.NumberColumn("المتحقق (Actual)", disabled=True), # ممنوع التعديل
-                     "Target": st.column_config.NumberColumn("المستهدف (Target)"), # مسموح التعديل
+                     "Actual": st.column_config.NumberColumn("المتحقق (Actual)", disabled=True), 
+                     "Target": st.column_config.NumberColumn("المستهدف (Target)"), 
                      "Owner": st.column_config.TextColumn("المسؤول (Owner)"),
                 }
             )
@@ -285,7 +314,6 @@ def admin_view(sh, user_name):
                 time.sleep(1)
                 st.rerun()
             
-            # الرسم البياني
             if not edited_kpi.empty:
                 draw_kpi_chart(edited_kpi)
                 
@@ -301,7 +329,6 @@ def owner_view(sh, user_name, my_initiatives_str):
     else:
         my_list = []
 
-    # --- الجزء 1: تحديث أنشطة المبادرات ---
     try:
         ws_acts = sh.worksheet("Activities")
         all_data = pd.DataFrame(ws_acts.get_all_records())
@@ -317,7 +344,6 @@ def owner_view(sh, user_name, my_initiatives_str):
         else:
             sel_init = st.selectbox("اختر المبادرة", my_data['Mabadara'].unique())
             
-            # نموذج إضافة نشاط
             with st.expander("➕ إضافة نشاط جديد لهذه المبادرة"):
                 with st.form("add_activity_form"):
                     new_act_name = st.text_input("اسم النشاط الجديد")
@@ -349,16 +375,12 @@ def owner_view(sh, user_name, my_initiatives_str):
 
                     with st.form("update_form"):
                         st.markdown("#### 📝 بيانات النشاط")
-                        
-                        # --- التعديل المطلوب 1: البداية | النهاية | الإنجاز في سطر واحد ---
                         col_start, col_end, col_prog = st.columns(3)
-                        
                         with col_start:
                              new_start = st.date_input("تاريخ البداية", value=parse_date(row['Start_Date']))
                         with col_end:
                              new_end = st.date_input("تاريخ النهاية", value=parse_date(row['End_Date']))
                         with col_prog:
-                             # استبدال السلايدر بصندوق إدخال رقمي
                              curr_prog = safe_int(row['Progress'])
                              new_prog = st.number_input("نسبة الإنجاز %", min_value=0, max_value=100, value=curr_prog, step=1)
 
@@ -371,7 +393,6 @@ def owner_view(sh, user_name, my_initiatives_str):
                                 sh_fresh = get_sheet_connection()
                                 ws_fresh = sh_fresh.worksheet("Activities")
                                 df_fresh = pd.DataFrame(ws_fresh.get_all_records())
-                                # تنظيف ومطابقة
                                 df_fresh['Mabadara'] = df_fresh['Mabadara'].astype(str).str.strip()
                                 df_fresh['Activity'] = df_fresh['Activity'].astype(str).str.strip()
                                 mask = (df_fresh['Mabadara'] == sel_init) & (df_fresh['Activity'] == sel_act_name)
@@ -394,18 +415,21 @@ def owner_view(sh, user_name, my_initiatives_str):
 
     st.markdown("---")
 
-    # --- الجزء 2: تحديث المؤشرات المسندة (التعديل المطلوب 2) ---
     st.markdown("### 📈 تحديث مؤشرات الأداء المسندة لي")
     try:
         ws_kpi = sh.worksheet("KPIs")
         df_kpi = pd.DataFrame(ws_kpi.get_all_records())
         
-        # التأكد من وجود عمود Owner
         if 'Owner' not in df_kpi.columns:
-            st.warning("لم يتم العثور على عمود 'Owner' في ورقة المؤشرات. يرجى إضافته لربط المؤشرات بالموظفين.")
+            st.warning("لم يتم العثور على عمود 'Owner' في ورقة المؤشرات.")
         else:
-            # فلترة المؤشرات الخاصة بهذا الموظف
-            my_kpis = df_kpi[df_kpi['Owner'].astype(str).str.strip() == user_name.strip()]
+            # استخدام البريد الإلكتروني للمطابقة بدلاً من الاسم
+            current_email = st.session_state['user_info'].get('username', '').strip()
+            # محاولة المطابقة بالإيميل أو الاسم (لزيادة المرونة)
+            my_kpis = df_kpi[
+                (df_kpi['Owner'].astype(str).str.strip() == current_email) | 
+                (df_kpi['Owner'].astype(str).str.strip() == user_name.strip())
+            ]
             
             if my_kpis.empty:
                 st.info("لا توجد مؤشرات أداء مرتبطة بحسابك حالياً.")
@@ -416,13 +440,12 @@ def owner_view(sh, user_name, my_initiatives_str):
 
                 st.caption("يمكنك تعديل القيمة 'الفعلية' (Actual) للمؤشرات أدناه.")
                 
-                # عرض محرر بيانات يسمح بتعديل Actual فقط
                 edited_my_kpi = st.data_editor(
                     my_kpis,
                     column_config={
                         "KPI_Name": st.column_config.TextColumn("المؤشر", disabled=True),
                         "Target": st.column_config.NumberColumn("المستهدف", disabled=True),
-                        "Actual": st.column_config.NumberColumn("المتحقق (Actual)", required=True), # مسموح التعديل
+                        "Actual": st.column_config.NumberColumn("المتحقق (Actual)", required=True), 
                         "Admin_Comment": st.column_config.TextColumn("ملاحظات المدير", disabled=True),
                         "Owner": st.column_config.TextColumn("المسؤول", disabled=True),
                     },
@@ -434,9 +457,7 @@ def owner_view(sh, user_name, my_initiatives_str):
 
                 if st.button("💾 حفظ تحديث المؤشرات"):
                     try:
-                        # تحديث الداتا فريم الأصلي بالقيم الجديدة
                         for idx, row in edited_my_kpi.iterrows():
-                            # نستخدم KPI_Name كمفتاح (يفترض أن يكون فريداً)
                             mask = df_kpi['KPI_Name'] == row['KPI_Name']
                             df_kpi.loc[mask, 'Actual'] = row['Actual']
                         
@@ -452,87 +473,48 @@ def owner_view(sh, user_name, my_initiatives_str):
         st.error(f"خطأ في بيانات المؤشرات: {e}")
 
 # ================================
-# واجهة المشاهد / الموظف العام (Viewer) - (التعديل المطلوب 3)
+# واجهة المشاهد (Viewer) - تعديل: مشاهدة المؤشرات فقط
 # ================================
 def viewer_view(sh, user_name):
-    st.markdown(f"### 👋 مرحباً، {user_name} (نسخة للاطلاع)")
-    st.info("💡 هذا الحساب مخصص للاطلاع على سير العمل والمؤشرات فقط.")
-
+    st.markdown(f"### 👋 مرحباً، {user_name} (نسخة للاطلاع - المؤشرات فقط)")
+    
     try:
-        # 1. نظرة عامة (مثل الأدمن)
-        ws_acts = sh.worksheet("Activities")
-        df_acts = pd.DataFrame(ws_acts.get_all_records())
+        # الاتصال بصفحة المؤشرات فقط
+        ws_kpi = sh.worksheet("KPIs")
+        df_kpi = pd.DataFrame(ws_kpi.get_all_records())
         
-        if not df_acts.empty:
-            df_acts['Progress'] = df_acts['Progress'].apply(safe_int)
-            avg_progress = df_acts['Progress'].mean()
-            
-            c1, c2, c3 = st.columns(3)
-            c1.metric("عدد المبادرات", df_acts['Mabadara'].nunique())
-            c2.metric("عدد الأنشطة", len(df_acts))
-            c3.metric("نسبة الإنجاز العامة", f"{avg_progress:.1f}%")
+        if df_kpi.empty:
+            st.info("⚠️ لا توجد مؤشرات مسجلة في النظام.")
+            return
+
+        # تنظيف البيانات للعرض
+        df_kpi['Target'] = df_kpi['Target'].apply(safe_float)
+        df_kpi['Actual'] = df_kpi['Actual'].apply(safe_float)
+        
+        # 1. عرض الرسم البياني
+        st.markdown("### 📊 الرسم البياني للمؤشرات")
+        draw_kpi_chart(df_kpi)
         
         st.markdown("---")
         
-        # 2. عرض البيانات (Read Only)
-        tab1, tab2 = st.tabs(["📋 حالة المبادرات", "📊 مؤشرات الأداء"])
-        
-        with tab1:
-            st.dataframe(
-                df_acts[['Mabadara', 'Activity', 'Start_Date', 'End_Date', 'Progress', 'Owner_Comment']],
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Mabadara": "المبادرة", "Activity": "النشاط", 
-                    "Progress": st.column_config.ProgressColumn("الإنجاز", format="%d%%"),
-                    "Owner_Comment": "آخر التحديثات"
-                }
-            )
-
-        with tab2:
-            ws_kpi = sh.worksheet("KPIs")
-            df_kpi = pd.DataFrame(ws_kpi.get_all_records())
-            df_kpi['Target'] = df_kpi['Target'].apply(safe_float)
-            df_kpi['Actual'] = df_kpi['Actual'].apply(safe_float)
-            
-            if not df_kpi.empty:
-                draw_kpi_chart(df_kpi)
-                st.dataframe(df_kpi[['KPI_Name', 'Target', 'Actual', 'Owner']], use_container_width=True, hide_index=True)
+        # 2. عرض الجدول التفصيلي
+        st.markdown("### 📋 جدول تفاصيل المؤشرات")
+        st.dataframe(
+            df_kpi[['KPI_Name', 'Target', 'Actual', 'Owner', 'Unit', 'Frequency']],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "KPI_Name": "اسم المؤشر",
+                "Target": "المستهدف",
+                "Actual": "المتحقق",
+                "Owner": "المسؤول",
+                "Unit": "الوحدة",
+                "Frequency": "الدورية"
+            }
+        )
 
     except Exception as e:
-        st.error(f"خطأ في تحميل البيانات: {e}")
-
-# --- دالة رسم المؤشرات (مشتركة) ---
-def draw_kpi_chart(df):
-    def get_status(row):
-        target, actual = row['Target'], row['Actual']
-        direction = row.get('Direction', 'تصاعدي') 
-        if direction == 'تنازلي': 
-            return "متقدم (أزرق)" if actual < target else "متحقق (أخضر)" if actual == target else "متأخر (أحمر)"
-        else: 
-            return "متقدم (أزرق)" if actual > target else "متحقق (أخضر)" if actual == target else "متأخر (أحمر)"
-
-    df['Status'] = df.apply(get_status, axis=1)
-    
-    fig = go.Figure()
-    status_colors = df['Status'].map({
-        "متقدم (أزرق)": "#1f77b4", "متحقق (أخضر)": "#2ca02c", "متأخر (أحمر)": "#d62728"
-    }).fillna("grey")
-
-    fig.add_trace(go.Bar(
-        x=df['KPI_Name'], y=df['Actual'], name='الفعلي', 
-        marker_color=status_colors, text=df['Actual'],       
-        textposition='inside', width=0.5                        
-    ))
-    fig.add_trace(go.Scatter(
-        x=df['KPI_Name'], y=df['Target'], mode='markers',                  
-        name='المستهدف', marker=dict(symbol='line-ew', size=50, color='black', line=dict(width=3)), 
-    ))
-    fig.update_layout(
-        title="مقارنة الأداء (الفعلي vs المستهدف)", xaxis_title="المؤشر", yaxis_title="القيمة",
-        barmode='overlay', bargap=0.4, legend=dict(orientation="h", y=1.1, x=0.5, xanchor='center')
-    )
-    st.plotly_chart(fig, use_container_width=True)
+        st.error(f"خطأ في تحميل بيانات المؤشرات: {e}")
 
 # ---------------------------------------------------------
 # 5. التشغيل
@@ -563,7 +545,7 @@ else:
             admin_view(connection, user_name)
         elif role == 'Owner':
             owner_view(connection, user_name, st.session_state['user_info']['assigned_initiative'])
-        elif role == 'Viewer' or role == 'Staff': # الدور الجديد
+        elif role == 'Viewer' or role == 'Staff': 
             viewer_view(connection, user_name)
         else:
             st.error(f"⚠️ خطأ: الدور '{role}' غير معروف. الرجاء التواصل مع الإدارة.")
@@ -574,6 +556,6 @@ else:
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 17.0 (KPI Linking & Viewer Role)
+    System Version: 18.0 (Viewer: KPIs Only)
 </div>
 """, unsafe_allow_html=True)
