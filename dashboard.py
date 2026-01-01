@@ -634,6 +634,6 @@ else:
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 22.1 (Compatible Mode)
+    System Version: 22.1 (اهداء للحب افنان)
 </div>
 """, unsafe_allow_html=True)
