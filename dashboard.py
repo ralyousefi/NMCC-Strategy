@@ -13,60 +13,72 @@ from datetime import datetime
 # ---------------------------------------------------------
 st.set_page_config(page_title="نظام إدارة الاستراتيجية", layout="wide", page_icon="📊")
 
-# تحسينات CSS للهوية البصرية (إصلاح شامل للمشاكل)
+# تحسينات CSS للهوية البصرية (النسخة الآمنة 16.0)
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap');
     
-    html, body, [class*="css"] {
-        font-family: 'Tajawal', sans-serif;
-        direction: rtl;
+    /* تطبيق الخط على كامل الموقع */
+    html, body, div, p, span, h1, h2, h3, h4, h5, h6 {
+        font-family: 'Tajawal', sans-serif !important;
     }
     
-    h1, h2, h3, h4, p, div, input, select, textarea, .stSelectbox, .stNumberInput {text-align: right;}
-    .stDataFrame {direction: rtl;}
+    /* ⚠️ هام: تطبيق RTL على المحتوى فقط وليس الهيكل العام لتجنب الشاشة السوداء */
+    .stMarkdown, .stDataFrame, .stSelectbox, .stTextInput, .stNumberInput, .stTextArea {
+        direction: rtl !important;
+        text-align: right !important;
+    }
     
-    /* حل مشكلة الشريط الجانبي المقتطع في صفحة المالك */
-    .block-container {
-        padding-right: 3rem !important;
-        padding-left: 3rem !important;
-        max-width: 100%;
+    /* محاذاة العناوين لليمين */
+    h1, h2, h3, h4, p {
+        text-align: right;
     }
 
-    /* تنسيق بطاقات الأداء (KPI Cards) - الخلفية */
+    /* إصلاح هوامش الصفحة لمنع اختفاء العناصر الجانبية */
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 5rem;
+        padding-right: 2rem;
+        padding-left: 2rem;
+    }
+
+    /* ------------------------------------------------------- */
+    /* تنسيق بطاقات الأداء (KPI Cards) - حل مشكلة الألوان */
+    /* ------------------------------------------------------- */
+    
+    /* الصندوق نفسه: خلفية بيضاء */
     div[data-testid="stMetric"] {
-        background-color: #ffffff;
+        background-color: #ffffff !important;
         border: 1px solid #e6e6e6;
         padding: 15px;
         border-radius: 10px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        text-align: center;
-        direction: rtl;
+        direction: rtl; /* اتجاه البطاقة */
     }
 
-    /* --- إصلاح نهائي لظهور نصوص العناوين --- */
-    /* استهداف الحاوية وكل العناصر داخلها لإجبار اللون الأزرق */
+    /* العناوين (المبادرات، الأنشطة...) - لون أزرق إجباري */
     div[data-testid="stMetricLabel"] {
         justify-content: center;
-    }
-    div[data-testid="stMetricLabel"], 
-    div[data-testid="stMetricLabel"] p,
-    div[data-testid="stMetricLabel"] div {
         font-size: 20px !important;
-        color: #0068c9 !important;       /* إجبار اللون الأزرق */
-        fill: #0068c9 !important;        /* في حال وجود أيقونات SVG */
-        font-weight: 800 !important;     /* خط عريض جداً */
-        visibility: visible !important;  /* تأكيد الظهور */
-        opacity: 1 !important;
+        font-weight: 800 !important;
     }
-    /* -------------------------------------- */
+    
+    /* استهداف النصوص داخل العنوان بقوة لتجاوز الوضع الليلي */
+    div[data-testid="stMetricLabel"] * {
+        color: #0068c9 !important;
+        fill: #0068c9 !important; /* للأيقونات */
+    }
 
-    /* تنسيق الأرقام */
+    /* الأرقام (القيم) */
     div[data-testid="stMetricValue"] {
-        font-size: 28px;
-        color: #0068c9;
-        font-weight: bold;
+        font-size: 28px !important;
+        color: #0068c9 !important;
+        font-weight: bold !important;
+        justify-content: center;
+        text-align: center;
     }
+
+    /* ------------------------------------------------------- */
 
     /* تنسيق صندوق النشاط */
     .activity-box {
@@ -77,8 +89,10 @@ st.markdown("""
         margin: 20px 0;
         font-size: 18px;
         line-height: 1.8;
-        color: #0e1117;
+        color: #0e1117; /* لون نص داكن */
         box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        direction: rtl;
+        text-align: right;
     }
     
     /* تنسيق تنبيه الإدارة */
@@ -91,6 +105,8 @@ st.markdown("""
         border-right: 5px solid #ffc107;
         margin-bottom: 20px;
         font-weight: bold;
+        direction: rtl;
+        text-align: right;
     }
     
     .step-header {
@@ -98,6 +114,7 @@ st.markdown("""
         font-size: 16px;
         margin-bottom: 10px;
         font-weight: bold;
+        text-align: right;
     }
     
     .footer {
@@ -112,6 +129,12 @@ st.markdown("""
         font-size: 12px;
         border-top: 1px solid #ddd;
         z-index: 100;
+    }
+    
+    /* تحسين شكل الجداول لليمين */
+    .stDataFrame {
+        width: 100%;
+        direction: rtl;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -181,6 +204,7 @@ def login():
     with c2:
         st.markdown("<h2 style='text-align: center;'>🔐 تسجيل الدخول</h2>", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
+        # نستخدم markdown لضبط اتجاه النص في حقول الإدخال إذا لزم الأمر
         username = st.text_input("اسم المستخدم")
         password = st.text_input("كلمة المرور", type="password")
         if st.button("دخول", use_container_width=True):
@@ -205,8 +229,8 @@ def login():
 
 # --- واجهة الأدمن (محسنة) ---
 def admin_view(sh, user_name):
-    # تم إزالة الأعمدة والصورة الجانبية لتجنب التداخل
-    st.markdown(f"<h1 style='text-align: center;'>لوحة القيادة التنفيذية - {user_name}</h1>", unsafe_allow_html=True)
+    # تم إزالة الكود المسبب للتداخل (الأعمدة والصورة)
+    st.markdown(f"<h1 style='text-align: right;'>لوحة القيادة التنفيذية - {user_name}</h1>", unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
     try:
@@ -476,6 +500,6 @@ def owner_view(sh, user_name, my_initiatives_str):
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 15.5 (Layout & Labels Fixed)
+    System Version: 16.0 (Safe Mode - Black Screen Fixed)
 </div>
 """, unsafe_allow_html=True)
