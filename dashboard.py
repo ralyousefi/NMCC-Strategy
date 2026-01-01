@@ -9,77 +9,54 @@ import time
 from datetime import datetime
 
 # ---------------------------------------------------------
-# 1. إعدادات الصفحة والهوية البصرية
+# 1. إعدادات الصفحة
 # ---------------------------------------------------------
 st.set_page_config(page_title="نظام إدارة الاستراتيجية", layout="wide", page_icon="📊")
 
-# --- CSS الإصلاح الجذري (النسخة 17.0) ---
+# ---------------------------------------------------------
+# 2. تحسينات CSS (نسخة الطوارئ - الآمنة جداً)
+# ---------------------------------------------------------
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap');
     
-    /* 1. توحيد الخط */
+    /* 1. تطبيق الخط ومحاذاة النصوص لليمين (طريقة آمنة لا تكسر الصفحة) */
     html, body, [class*="css"] {
-        font-family: 'Tajawal', sans-serif !important;
+        font-family: 'Tajawal', sans-serif;
     }
-
-    /* 2. محاذاة النصوص لليمين بدلاً من قلب الصفحة (لتجنب الشاشة السوداء) */
-    .stMarkdown, .stDataFrame, .stSelectbox, .stTextInput, .stNumberInput, .stTextArea, div[data-testid="stMetricValue"] {
+    
+    .stMarkdown, .stDataFrame, .stSelectbox, .stTextInput, .stNumberInput, .stTextArea {
         text-align: right !important;
     }
     
-    /* محاذاة العناوين */
-    h1, h2, h3, h4, h5, h6, p {
+    h1, h2, h3, h4, p {
         text-align: right !important;
     }
 
-    /* 3. إصلاح ألوان الصناديق (النظرة العامة) */
+    /* 2. إصلاح صناديق النظرة العامة (Cards) */
     div[data-testid="stMetric"] {
-        background-color: #ffffff !important; /* خلفية بيضاء */
+        background-color: #ffffff !important; /* خلفية بيضاء إجبارية */
         border: 1px solid #e6e6e6 !important;
         border-radius: 10px;
         padding: 15px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        direction: rtl; /* هنا مسموح قلب الاتجاه لأنه صندوق صغير */
     }
 
-    /* لون العناوين (المبادرات، الأنشطة) - أزرق غامق */
+    /* 3. تلوين العناوين والأرقام (الحل الجذري للاختفاء) */
     div[data-testid="stMetricLabel"] p {
-        color: #0068c9 !important;
-        font-size: 20px !important;
-        font-weight: 800 !important;
-        visibility: visible !important;
+        color: #0068c9 !important;      /* لون أزرق إجباري */
+        font-size: 22px !important;     /* خط كبير */
+        font-weight: 800 !important;    /* خط عريض */
+        visibility: visible !important; /* منع الاختفاء */
     }
     
-    /* لون الأرقام */
     div[data-testid="stMetricValue"] {
-        color: #0068c9 !important;
-        font-size: 28px !important;
+        color: #0068c9 !important;      /* لون أزرق للأرقام */
+        font-size: 30px !important;
+        font-weight: bold !important;
     }
 
-    /* 4. تنسيق الجداول لتكون من اليمين لليسار */
-    .stDataFrame {
-        direction: rtl !important;
-    }
-    
-    /* 5. إصلاح القوائم المنسدلة */
-    div[data-baseweb="select"] > div {
-        direction: rtl;
-        text-align: right;
-    }
-
-    /* 6. صناديق التنبيه والأنشطة */
-    .activity-box {
-        background-color: #f8f9fa;
-        padding: 20px;
-        border-radius: 10px;
-        border-right: 6px solid #0068c9;
-        margin: 20px 0;
-        text-align: right;
-        direction: rtl;
-        color: #000000;
-    }
-    
+    /* 4. تنسيق صندوق التنبيهات */
     .admin-alert-box {
         background-color: #fff3cd;
         color: #856404;
@@ -91,14 +68,8 @@ st.markdown("""
         text-align: right;
         direction: rtl;
     }
-
-    /* 7. الهوامش (لحل مشكلة القص في صفحة المالك) */
-    .block-container {
-        padding-top: 2rem;
-        padding-bottom: 5rem;
-        max-width: 100%;
-    }
     
+    /* 5. تنسيق الفوتر */
     .footer {
         position: fixed;
         left: 0;
@@ -116,7 +87,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 2. إعدادات الاتصال (الهجينة)
+# 3. إعدادات الاتصال
 # ---------------------------------------------------------
 SHEET_ID = "11tKfYa-Sqa96wDwQvMvChgRWaxgMRAWAIvul7p27ayY"
 
@@ -169,7 +140,7 @@ def parse_date(date_str):
         return datetime.today().date()
 
 # ---------------------------------------------------------
-# 3. نظام تسجيل الدخول
+# 4. نظام تسجيل الدخول
 # ---------------------------------------------------------
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
@@ -199,23 +170,19 @@ def login():
                 st.error(f"خطأ اتصال: {e}")
 
 # ---------------------------------------------------------
-# 4. واجهات المستخدمين
+# 5. واجهات المستخدمين
 # ---------------------------------------------------------
 
 # --- واجهة الأدمن ---
 def admin_view(sh, user_name):
-    # استخدام الأعمدة لوضع العنوان والصورة بشكل مرتب
-    # العمود الأول (كبير) للعنوان - العمود الثاني (صغير) للصورة
-    col_text, col_img = st.columns([5, 1])
-    
-    with col_text:
+    # استخدام الأعمدة للترتيب (بدون تداخل)
+    c1, c2 = st.columns([0.8, 0.2])
+    with c1:
         st.markdown(f"## لوحة القيادة التنفيذية - {user_name}")
-        
-    with col_img:
-        # تأكد من وجود الصورة بهذا الاسم في الملفات
+    with c2:
         if os.path.exists("logo.png"):
             st.image("logo.png", use_container_width=True)
-    
+
     st.markdown("---")
 
     try:
@@ -235,11 +202,11 @@ def admin_view(sh, user_name):
             delayed_count = len(df_acts[(df_acts['Progress'] < 100) & (df_acts['End_Date_DT'] < today)])
 
             # البطاقات
-            k1, k2, k3, k4 = st.columns(4)
-            k1.metric("📦 المبادرات", total_initiatives)
-            k2.metric("📝 الأنشطة", total_activities)
-            k3.metric("📈 متوسط الإنجاز", f"{avg_progress:.1f}%")
-            k4.metric("🚨 أنشطة متأخرة", delayed_count, delta_color="inverse")
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("📦 المبادرات", total_initiatives)
+            col2.metric("📝 الأنشطة", total_activities)
+            col3.metric("📈 متوسط الإنجاز", f"{avg_progress:.1f}%")
+            col4.metric("🚨 أنشطة متأخرة", delayed_count, delta_color="inverse")
 
             st.markdown("---")
     
@@ -363,10 +330,11 @@ def admin_view(sh, user_name):
 
 # --- واجهة المالك ---
 def owner_view(sh, user_name, my_initiatives_str):
-    col_text, col_img = st.columns([5, 1])
-    with col_text:
+    # رأس الصفحة: عنوان + صورة
+    c1, c2 = st.columns([0.8, 0.2])
+    with c1:
         st.title(f"مرحباً، {user_name} 👋")
-    with col_img:
+    with c2:
         if os.path.exists("logo.png"):
             st.image("logo.png", use_container_width=True)
     
@@ -490,6 +458,6 @@ def owner_view(sh, user_name, my_initiatives_str):
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 17.0 (Restored Visuals)
+    System Version: 18.0 (Emergency Clean Mode)
 </div>
 """, unsafe_allow_html=True)
