@@ -213,7 +213,7 @@ def draw_kpi_chart(df):
     st.plotly_chart(fig, use_container_width=True)
 
 # ================================
-# واجهة المدير (Admin) - نسخة متوافقة (Compatible)
+# واجهة المدير (Admin)
 # ================================
 def admin_view(sh, user_name):
     st.markdown("### 📊 لوحة القيادة التنفيذية")
@@ -256,7 +256,7 @@ def admin_view(sh, user_name):
                 df_filt = df_acts[df_acts['Mabadara'] == init].copy()
                 df_filt['New_Admin_Note'] = "" 
                 
-                # إعداد الجدول (بدون selection_mode وبدون disabled في ProgressColumn)
+                # إعداد الجدول
                 edited_df = st.data_editor(
                     df_filt,
                     column_config={
@@ -268,7 +268,7 @@ def admin_view(sh, user_name):
                         "Evidence_Link": st.column_config.LinkColumn("رابط الدليل", display_text="📎 فتح"),
                         "Start_Date": None, "End_Date": None, "End_Date_DT": None, "Mabadara": None 
                     },
-                    # التعطيل يتم هنا في القائمة الرئيسية
+                    # التعطيل
                     disabled=["Activity", "Progress", "Owner_Comment", "Admin_Comment", "Mabadara"],
                     hide_index=True,
                     use_container_width=True,
@@ -300,7 +300,7 @@ def admin_view(sh, user_name):
                         else:
                             st.info("لم يتم كتابة أي ملاحظات جديدة للحفظ.")
 
-                # --- بديل عرض السجل للنسخ القديمة ---
+                # --- عرض السجل التاريخي ---
                 st.markdown("---")
                 st.markdown("##### 📜 عرض السجل التاريخي الكامل")
                 act_for_history = st.selectbox("اختر النشاط لعرض سجله:", df_filt['Activity'].unique(), key="hist_act_sel")
@@ -350,7 +350,6 @@ def admin_view(sh, user_name):
                      "New_Admin_Note": st.column_config.TextColumn("✍️ ملاحظة إدارية جديدة", width="large"),
                      "Unit": None, "Direction": None, "Frequency": None 
                 },
-                # تعطيل الأعمدة عدا المستهدف والملاحظة الجديدة
                 disabled=["KPI_Name", "Actual", "Owner", "Owner_Comment", "Admin_Comment", "Unit", "Direction", "Frequency"]
             )
             
@@ -380,7 +379,6 @@ def admin_view(sh, user_name):
                     else:
                         st.info("لا توجد تغييرات للحفظ.")
             
-            # --- بديل عرض السجل للمؤشرات ---
             st.markdown("---")
             st.markdown("##### 📜 سجل المؤشر")
             kpi_for_history = st.selectbox("اختر المؤشر لعرض سجله:", df_kpi['KPI_Name'].unique(), key="hist_kpi_sel")
@@ -601,17 +599,31 @@ if not st.session_state['logged_in']:
     login()
 else:
     with st.container():
-        col_info, col_space, col_logout = st.columns([3, 5, 1])
+        # تعديل الترويسة: 4 أعمدة لإضافة الشعار على اليسار
+        # بما أن الاتجاه RTL، فإن الترتيب الظاهري من اليمين لليسار هو:
+        # 1 (يمين), 2, 3, 4 (يسار)
+        col_info, col_space, col_logout, col_logo = st.columns([3, 4, 1, 1])
+        
         with col_info:
             user_name = st.session_state['user_info']['name']
             user_role = st.session_state['user_info']['role']
             st.markdown(f"### 👤 {user_name}")
             st.caption(f"الدور: {user_role}")
+            
         with col_logout:
             st.write("") 
             if st.button("تسجيل الخروج", use_container_width=True):
                 st.session_state['logged_in'] = False
                 st.rerun()
+                
+        with col_logo:
+             # عرض الشعار إذا وجد
+             if os.path.exists("logo.png"):
+                 st.image("logo.png", width=80)
+             else:
+                 # placeholder في حال عدم وجود الصورة
+                 pass
+
     st.write("---") 
 
     try:
@@ -634,6 +646,6 @@ else:
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 22.1 (NMCC - 2026)
+    System Version: 23.0 (NMCC - 2026)
 </div>
 """, unsafe_allow_html=True)
