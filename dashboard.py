@@ -9,18 +9,46 @@ import time
 from datetime import datetime
 
 # ---------------------------------------------------------
-# 1. إعدادات الصفحة
+# 1. إعدادات الصفحة والهوية البصرية
 # ---------------------------------------------------------
-st.set_page_config(page_title="نظام إدارة الاستراتيجية", layout="wide", page_icon="📈")
+st.set_page_config(page_title="نظام إدارة الاستراتيجية", layout="wide", page_icon="📊")
 
+# تحسينات CSS للهوية البصرية وبطاقات الأداء
 st.markdown("""
 <style>
-    .main {direction: rtl;}
+    @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap');
+    
+    html, body, [class*="css"] {
+        font-family: 'Tajawal', sans-serif;
+        direction: rtl;
+    }
+    
     h1, h2, h3, h4, p, div, input, select, textarea, .stSelectbox, .stNumberInput {text-align: right;}
     .stDataFrame {direction: rtl;}
     
+    /* تنسيق بطاقات الأداء (KPI Cards) */
+    div[data-testid="stMetric"] {
+        background-color: #ffffff;
+        border: 1px solid #e6e6e6;
+        padding: 15px;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        text-align: center;
+    }
+    div[data-testid="stMetricLabel"] {
+        font-size: 16px;
+        color: #555;
+        justify-content: center;
+    }
+    div[data-testid="stMetricValue"] {
+        font-size: 28px;
+        color: #0068c9;
+        font-weight: bold;
+    }
+
+    /* تنسيق صندوق النشاط */
     .activity-box {
-        background-color: #f0f8ff;
+        background-color: #f8f9fa;
         padding: 20px;
         border-radius: 10px;
         border-right: 6px solid #0068c9;
@@ -31,6 +59,7 @@ st.markdown("""
         box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     }
     
+    /* تنسيق تنبيه الإدارة */
     .admin-alert-box {
         background-color: #fff3cd;
         color: #856404;
@@ -43,9 +72,9 @@ st.markdown("""
     }
     
     .step-header {
-        color: #555;
-        font-size: 14px;
-        margin-bottom: 5px;
+        color: #0068c9;
+        font-size: 16px;
+        margin-bottom: 10px;
         font-weight: bold;
     }
     
@@ -66,41 +95,29 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 2. إعدادات الاتصال (تم التعديل لتعمل أونلاين ومحلياً)
+# 2. إعدادات الاتصال (الهجينة)
 # ---------------------------------------------------------
 SHEET_ID = "11tKfYa-Sqa96wDwQvMvChgRWaxgMRAWAIvul7p27ayY"
 
 def get_creds():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     
-    # 1. المحاولة الأولى: القراءة من Streamlit Secrets (للموقع أونلاين)
-    # نستخدم try-except لتجنب الأخطاء إذا لم تكن الأسرار موجودة
+    # 1. المحاولة الأولى: Secrets (للموقع أونلاين)
     try:
         if st.secrets is not None and 'gcp_service_account' in st.secrets:
-            # تحويل الأسرار إلى قاموس بايثون
             creds_dict = dict(st.secrets["gcp_service_account"])
-            
-            # إصلاح مشكلة المسافات في المفتاح الخاص (Private Key Fix)
-            # هذه أهم خطوة لكي يعمل المفتاح أونلاين
             if 'private_key' in creds_dict:
                 creds_dict['private_key'] = creds_dict['private_key'].replace('\\n', '\n')
-
             return ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     except Exception:
-        pass # إذا فشلت قراءة الأسرار، انتقل للمحاولة الثانية بصمت
+        pass
 
-    # 2. المحاولة الثانية: القراءة من ملف محلي (للعمل داخل Codespace)
+    # 2. المحاولة الثانية: الملف المحلي (لـ Codespaces)
     json_key_file = "credentials.json"
     if os.path.exists(json_key_file):
         return ServiceAccountCredentials.from_json_keyfile_name(json_key_file, scope)
         
-    # 3. إذا فشلت المحاولتان
-    st.error("""
-    ⚠️ **خطأ في الاتصال!**
-    لم يتم العثور على بيانات الاعتماد.
-    - إذا كنت على الموقع: تأكد من إعداد Secrets في لوحة التحكم.
-    - إذا كنت في Codespace: تأكد من وجود ملف credentials.json.
-    """)
+    st.error("⚠️ خطأ في الاتصال: لم يتم العثور على ملف الاعتمادات أو Secrets.")
     st.stop()
 
 def get_sheet_connection():
@@ -143,7 +160,8 @@ if 'logged_in' not in st.session_state:
 def login():
     c1, c2, c3 = st.columns([1,2,1])
     with c2:
-        st.markdown("### 🔐 تسجيل الدخول")
+        st.markdown("<h2 style='text-align: center;'>🔐 تسجيل الدخول</h2>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
         username = st.text_input("اسم المستخدم")
         password = st.text_input("كلمة المرور", type="password")
         if st.button("دخول", use_container_width=True):
@@ -151,7 +169,6 @@ def login():
                 sh = get_sheet_connection()
                 users_df = pd.DataFrame(sh.worksheet("Users").get_all_records())
                 users_df['username'] = users_df['username'].astype(str).str.strip()
-                # تنظيف البيانات
                 user = users_df[users_df['username'] == username.strip()]
                 
                 if not user.empty and str(user.iloc[0]['password']) == str(password):
@@ -167,32 +184,65 @@ def login():
 # 4. واجهات المستخدمين
 # ---------------------------------------------------------
 
-# --- واجهة الأدمن ---
+# --- واجهة الأدمن (محسنة) ---
 def admin_view(sh, user_name):
-    st.title(f"لوحة القيادة التنفيذية - {user_name} 🌟")
-    tab1, tab2 = st.tabs(["📋 متابعة المبادرات", "📊 مؤشرات الأداء (KPIs)"])
+    st.title(f"لوحة القيادة التنفيذية - {user_name}")
+    
+    # تحميل البيانات مرة واحدة لاستخدامها في البطاقات والجداول
+    try:
+        ws_acts = sh.worksheet("Activities")
+        df_acts = pd.DataFrame(ws_acts.get_all_records())
+        
+        # --- 1. بطاقات الأداء العلوية (KPI Cards) ---
+        if not df_acts.empty:
+            st.markdown("### 📊 نظرة عامة")
+            
+            # تجهيز الحسابات
+            df_acts['Progress'] = df_acts['Progress'].apply(safe_int)
+            total_initiatives = df_acts['Mabadara'].nunique() # عدد المبادرات الفريدة
+            total_activities = len(df_acts) # عدد الأنشطة
+            avg_progress = df_acts['Progress'].mean() # متوسط الإنجاز
+            
+            # حساب المتأخرات
+            today = datetime.now().date()
+            # نحول عمود التاريخ لنتأكد من المقارنة الصحيحة
+            df_acts['End_Date_DT'] = pd.to_datetime(df_acts['End_Date'], errors='coerce').dt.date
+            # الشرط: الإنجاز أقل من 100% والتاريخ فات
+            delayed_count = len(df_acts[(df_acts['Progress'] < 100) & (df_acts['End_Date_DT'] < today)])
+
+            # عرض البطاقات
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric("📦 المبادرات", total_initiatives)
+            k2.metric("📝 الأنشطة", total_activities)
+            k3.metric("📈 متوسط الإنجاز", f"{avg_progress:.1f}%")
+            k4.metric("🚨 أنشطة متأخرة", delayed_count, delta_color="inverse") # inverse يجعله أحمر إذا زاد
+
+            st.markdown("---")
+    
+    except Exception as e:
+        st.error(f"خطأ في تحميل الملخص: {e}")
+
+    tab1, tab2 = st.tabs(["📋 تفاصيل المبادرات", "📊 مؤشرات الأداء (KPIs)"])
     
     # 1. متابعة المبادرات
     with tab1:
         try:
-            ws_acts = sh.worksheet("Activities")
-            df_acts = pd.DataFrame(ws_acts.get_all_records())
-            
             if 'Admin_Comment' not in df_acts.columns:
                 df_acts['Admin_Comment'] = ""
 
             if not df_acts.empty:
-                st.markdown("### 🔎 مراجعة وتحديث المبادرات")
+                st.markdown("#### 🔎 مراجعة وتحديث المبادرات")
                 init = st.selectbox("اختر المبادرة:", df_acts['Mabadara'].unique())
                 filt = df_acts[df_acts['Mabadara'] == init]
                 
                 edited_acts = st.data_editor(
                     filt,
                     column_config={
-                        "Evidence_Link": st.column_config.LinkColumn("رابط الدليل", display_text="📎 فتح الرابط"),
+                        "Evidence_Link": st.column_config.LinkColumn("رابط الدليل", display_text="📎 فتح"),
                         "Progress": st.column_config.ProgressColumn("الإنجاز %", format="%d%%", min_value=0, max_value=100),
-                        "Admin_Comment": st.column_config.TextColumn("ملاحظات المدير (للموظف)", width="medium"),
-                        "Owner_Comment": st.column_config.TextColumn("رد الموظف", disabled=True)
+                        "Admin_Comment": st.column_config.TextColumn("ملاحظات المدير", width="medium"),
+                        "Owner_Comment": st.column_config.TextColumn("رد الموظف", disabled=True),
+                        "End_Date_DT": None # إخفاء عمود الحسابات المساعد
                     },
                     disabled=["Mabadara", "Activity", "Start_Date", "End_Date", "Progress", "Evidence_Link", "Owner_Comment"],
                     use_container_width=True,
@@ -203,6 +253,10 @@ def admin_view(sh, user_name):
                 if st.button("💾 حفظ الملاحظات"):
                     with st.spinner("جاري حفظ الملاحظات..."):
                         try:
+                            # حذف العمود المساعد قبل الحفظ
+                            if 'End_Date_DT' in df_acts.columns:
+                                df_acts = df_acts.drop(columns=['End_Date_DT'])
+
                             for index, row in edited_acts.iterrows():
                                 mask = (df_acts['Mabadara'] == row['Mabadara']) & (df_acts['Activity'] == row['Activity'])
                                 df_acts.loc[mask, 'Admin_Comment'] = row['Admin_Comment']
@@ -215,7 +269,6 @@ def admin_view(sh, user_name):
                             st.rerun()
                         except Exception as e:
                             st.error(f"حدث خطأ أثناء الحفظ: {e}")
-
         except Exception as e:
             st.error(f"خطأ تحميل: {e}")
 
@@ -227,7 +280,7 @@ def admin_view(sh, user_name):
             df_kpi['Target'] = df_kpi['Target'].apply(safe_float)
             df_kpi['Actual'] = df_kpi['Actual'].apply(safe_float)
             
-            st.markdown("### ✏️ تحديث المؤشرات")
+            st.markdown("#### ✏️ تحديث المؤشرات")
             with st.expander("فتح الجدول للتعديل"):
                 edited_kpi = st.data_editor(df_kpi, num_rows="dynamic", use_container_width=True, key="kpi_editor")
                 if st.button("حفظ المؤشرات"):
@@ -237,7 +290,6 @@ def admin_view(sh, user_name):
                     time.sleep(1)
                     st.rerun()
             
-            # --- رسم بياني (Bar with Target Line) ---
             if not edited_kpi.empty:
                 def get_status(row):
                     target, actual = row['Target'], row['Actual']
@@ -250,7 +302,6 @@ def admin_view(sh, user_name):
                 edited_kpi['Status'] = edited_kpi.apply(get_status, axis=1)
                 
                 fig = go.Figure()
-                
                 status_colors = edited_kpi['Status'].map({
                     "متقدم (أزرق)": "#1f77b4", 
                     "متحقق (أخضر)": "#2ca02c", 
@@ -284,7 +335,6 @@ def admin_view(sh, user_name):
                     legend=dict(orientation="h", y=1.1, x=0.5, xanchor='center'),
                     yaxis=dict(showgrid=True, gridcolor='lightgrey'),
                 )
-                
                 st.plotly_chart(fig, use_container_width=True)
                 
         except Exception as e:
@@ -292,7 +342,7 @@ def admin_view(sh, user_name):
 
 # --- واجهة المالك ---
 def owner_view(sh, user_name, my_initiatives_str):
-    st.title(f"مرحباً، {user_name} 👷")
+    st.title(f"مرحباً، {user_name} 👋")
     
     if my_initiatives_str:
         my_list = [x.strip() for x in str(my_initiatives_str).split(',') if x.strip() != '']
@@ -300,7 +350,7 @@ def owner_view(sh, user_name, my_initiatives_str):
         my_list = []
 
     if not my_list:
-        st.warning("⚠️ لا توجد مبادرات مسندة.")
+        st.warning("⚠️ لا توجد مبادرات مسندة إليك.")
         return
 
     try:
@@ -314,11 +364,9 @@ def owner_view(sh, user_name, my_initiatives_str):
 
         my_data = all_data[all_data['Mabadara'].isin(my_list)].copy()
 
-        # 1. اختيار المبادرة
         st.markdown('<p class="step-header">1️⃣ اختر المبادرة</p>', unsafe_allow_html=True)
         sel_init = st.selectbox("المبادرة", my_data['Mabadara'].unique(), label_visibility="collapsed")
         
-        # إضافة نشاط
         with st.expander("➕ إضافة نشاط جديد لهذه المبادرة"):
             with st.form("add_activity_form"):
                 st.info("سيتم إضافة النشاط مباشرة إلى قاعدة البيانات")
@@ -329,13 +377,13 @@ def owner_view(sh, user_name, my_initiatives_str):
                 
                 if st.form_submit_button("إضافة النشاط"):
                     if new_act_name.strip() == "":
-                        st.error("اكتب اسم النشاط")
+                        st.error("الرجاء كتابة اسم النشاط")
                     else:
                         with st.spinner("جاري الإضافة..."):
                             try:
                                 new_row = [sel_init, new_act_name, str(new_act_start), str(new_act_end), 0, "", "", ""]
                                 ws_acts.append_row(new_row)
-                                st.success("تمت الإضافة!")
+                                st.success("تمت الإضافة بنجاح!")
                                 time.sleep(1)
                                 st.rerun()
                             except Exception as e:
@@ -343,10 +391,9 @@ def owner_view(sh, user_name, my_initiatives_str):
 
         st.markdown("---")
 
-        # 2. اختيار النشاط
         acts_in_init = my_data[my_data['Mabadara'] == sel_init]
         if acts_in_init.empty:
-            st.info("لا توجد أنشطة.")
+            st.info("لا توجد أنشطة لهذه المبادرة.")
         else:
             st.markdown('<p class="step-header">2️⃣ اختر النشاط للتحديث</p>', unsafe_allow_html=True)
             sel_act_name = st.selectbox("النشاط", acts_in_init['Activity'].unique(), label_visibility="collapsed")
@@ -360,7 +407,6 @@ def owner_view(sh, user_name, my_initiatives_str):
                 
                 row = acts_in_init[acts_in_init['Activity'] == sel_act_name].iloc[0]
 
-                # عرض تعليق المدير
                 admin_msg = str(row.get('Admin_Comment', '')).strip()
                 if admin_msg:
                     st.markdown(f"""
@@ -369,7 +415,6 @@ def owner_view(sh, user_name, my_initiatives_str):
                     </div>
                     """, unsafe_allow_html=True)
 
-                # فورم التحديث
                 with st.form("update_form"):
                     st.markdown("#### 📝 تحديث البيانات")
                     c1, c2 = st.columns(2)
@@ -381,9 +426,9 @@ def owner_view(sh, user_name, my_initiatives_str):
                         new_end = st.date_input("النهاية", value=parse_date(row['End_Date']))
                     
                     st.markdown("#### 📎 الروابط والملاحظات")
-                    st.caption("تم تعطيل رفع الملفات مؤقتاً.")
+                    st.caption("لإرفاق ملف، يرجى وضع رابط سحابي (Google Drive, OneDrive).")
                     ext_link = st.text_input("رابط الدليل (URL)", value=str(row['Evidence_Link']))
-                    owner_cmt = st.text_area("ردك للإدارة", value=str(row['Owner_Comment']))
+                    owner_cmt = st.text_area("ردك للإدارة / ملاحظات", value=str(row['Owner_Comment']))
                     
                     if st.form_submit_button("💾 حفظ التحديث", use_container_width=True):
                         try:
@@ -410,10 +455,9 @@ def owner_view(sh, user_name, my_initiatives_str):
                                     time.sleep(1)
                                     st.rerun()
                                 else:
-                                    st.error("لم يتم العثور على النشاط.")
+                                    st.error("لم يتم العثور على النشاط في قاعدة البيانات.")
                         except Exception as e:
                             st.error(f"خطأ في الحفظ: {e}")
-
     except Exception as e:
         st.error(f"خطأ: {e}")
 
@@ -424,14 +468,21 @@ if not st.session_state['logged_in']:
     login()
 else:
     with st.sidebar:
-        st.write(f"👤 {st.session_state['user_info']['name']}")
-        if st.button("تسجيل الخروج"):
+        # --- مكان الشعار (Logo) ---
+        # يمكنك استبدال الرابط برابط شعار الجهة الخاص بك
+        # وضعنا شعار "رؤية 2030" كمثال افتراضي
+        st.image("https://upload.wikimedia.org/wikipedia/en/thumb/f/f6/Saudi_Vision_2030_logo.svg/1200px-Saudi_Vision_2030_logo.svg.png", use_container_width=True)
+        
+        st.write("---")
+        st.write(f"### 👤 {st.session_state['user_info']['name']}")
+        st.caption(f"الدور: {st.session_state['user_info']['role']}")
+        
+        if st.button("تسجيل الخروج", use_container_width=True):
             st.session_state['logged_in'] = False
             st.rerun()
             
     try:
         connection = get_sheet_connection()
-        # تنظيف الدور من المسافات والأحرف الكبيرة/الصغيرة لضمان التطابق
         role = str(st.session_state['user_info']['role']).strip().title()
         
         if role == 'Admin':
@@ -439,14 +490,14 @@ else:
         elif role == 'Owner':
             owner_view(connection, st.session_state['user_info']['name'], st.session_state['user_info']['assigned_initiative'])
         else:
-            st.error(f"⚠️ خطأ في الصلاحيات: الدور '{role}' غير معروف في النظام. يرجى مراجعة المسؤول.")
+            st.error(f"⚠️ خطأ: الدور '{role}' غير معروف.")
             
     except Exception as e:
         st.error(f"خطأ غير متوقع: {e}")
 
-# --- Footer: Version Number ---
+# --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 14.2 (Hybrid: Online & Local)
+    System Version: 15.0 (Pro: KPI Cards & Branding)
 </div>
 """, unsafe_allow_html=True)
