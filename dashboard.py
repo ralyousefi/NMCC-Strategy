@@ -13,89 +13,73 @@ from datetime import datetime
 # ---------------------------------------------------------
 st.set_page_config(page_title="نظام إدارة الاستراتيجية", layout="wide", page_icon="📊")
 
-# تحسينات CSS للهوية البصرية (النسخة الآمنة 16.0)
+# --- CSS الإصلاح الجذري (النسخة 17.0) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap');
     
-    /* تطبيق الخط على كامل الموقع */
-    html, body, div, p, span, h1, h2, h3, h4, h5, h6 {
+    /* 1. توحيد الخط */
+    html, body, [class*="css"] {
         font-family: 'Tajawal', sans-serif !important;
     }
-    
-    /* ⚠️ هام: تطبيق RTL على المحتوى فقط وليس الهيكل العام لتجنب الشاشة السوداء */
-    .stMarkdown, .stDataFrame, .stSelectbox, .stTextInput, .stNumberInput, .stTextArea {
-        direction: rtl !important;
+
+    /* 2. محاذاة النصوص لليمين بدلاً من قلب الصفحة (لتجنب الشاشة السوداء) */
+    .stMarkdown, .stDataFrame, .stSelectbox, .stTextInput, .stNumberInput, .stTextArea, div[data-testid="stMetricValue"] {
         text-align: right !important;
     }
     
-    /* محاذاة العناوين لليمين */
-    h1, h2, h3, h4, p {
+    /* محاذاة العناوين */
+    h1, h2, h3, h4, h5, h6, p {
+        text-align: right !important;
+    }
+
+    /* 3. إصلاح ألوان الصناديق (النظرة العامة) */
+    div[data-testid="stMetric"] {
+        background-color: #ffffff !important; /* خلفية بيضاء */
+        border: 1px solid #e6e6e6 !important;
+        border-radius: 10px;
+        padding: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        direction: rtl; /* هنا مسموح قلب الاتجاه لأنه صندوق صغير */
+    }
+
+    /* لون العناوين (المبادرات، الأنشطة) - أزرق غامق */
+    div[data-testid="stMetricLabel"] p {
+        color: #0068c9 !important;
+        font-size: 20px !important;
+        font-weight: 800 !important;
+        visibility: visible !important;
+    }
+    
+    /* لون الأرقام */
+    div[data-testid="stMetricValue"] {
+        color: #0068c9 !important;
+        font-size: 28px !important;
+    }
+
+    /* 4. تنسيق الجداول لتكون من اليمين لليسار */
+    .stDataFrame {
+        direction: rtl !important;
+    }
+    
+    /* 5. إصلاح القوائم المنسدلة */
+    div[data-baseweb="select"] > div {
+        direction: rtl;
         text-align: right;
     }
 
-    /* إصلاح هوامش الصفحة لمنع اختفاء العناصر الجانبية */
-    .block-container {
-        padding-top: 2rem;
-        padding-bottom: 5rem;
-        padding-right: 2rem;
-        padding-left: 2rem;
-    }
-
-    /* ------------------------------------------------------- */
-    /* تنسيق بطاقات الأداء (KPI Cards) - حل مشكلة الألوان */
-    /* ------------------------------------------------------- */
-    
-    /* الصندوق نفسه: خلفية بيضاء */
-    div[data-testid="stMetric"] {
-        background-color: #ffffff !important;
-        border: 1px solid #e6e6e6;
-        padding: 15px;
-        border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        direction: rtl; /* اتجاه البطاقة */
-    }
-
-    /* العناوين (المبادرات، الأنشطة...) - لون أزرق إجباري */
-    div[data-testid="stMetricLabel"] {
-        justify-content: center;
-        font-size: 20px !important;
-        font-weight: 800 !important;
-    }
-    
-    /* استهداف النصوص داخل العنوان بقوة لتجاوز الوضع الليلي */
-    div[data-testid="stMetricLabel"] * {
-        color: #0068c9 !important;
-        fill: #0068c9 !important; /* للأيقونات */
-    }
-
-    /* الأرقام (القيم) */
-    div[data-testid="stMetricValue"] {
-        font-size: 28px !important;
-        color: #0068c9 !important;
-        font-weight: bold !important;
-        justify-content: center;
-        text-align: center;
-    }
-
-    /* ------------------------------------------------------- */
-
-    /* تنسيق صندوق النشاط */
+    /* 6. صناديق التنبيه والأنشطة */
     .activity-box {
         background-color: #f8f9fa;
         padding: 20px;
         border-radius: 10px;
         border-right: 6px solid #0068c9;
         margin: 20px 0;
-        font-size: 18px;
-        line-height: 1.8;
-        color: #0e1117; /* لون نص داكن */
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-        direction: rtl;
         text-align: right;
+        direction: rtl;
+        color: #000000;
     }
     
-    /* تنسيق تنبيه الإدارة */
     .admin-alert-box {
         background-color: #fff3cd;
         color: #856404;
@@ -104,17 +88,15 @@ st.markdown("""
         border: 1px solid #ffeeba;
         border-right: 5px solid #ffc107;
         margin-bottom: 20px;
-        font-weight: bold;
+        text-align: right;
         direction: rtl;
-        text-align: right;
     }
-    
-    .step-header {
-        color: #0068c9;
-        font-size: 16px;
-        margin-bottom: 10px;
-        font-weight: bold;
-        text-align: right;
+
+    /* 7. الهوامش (لحل مشكلة القص في صفحة المالك) */
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 5rem;
+        max-width: 100%;
     }
     
     .footer {
@@ -129,12 +111,6 @@ st.markdown("""
         font-size: 12px;
         border-top: 1px solid #ddd;
         z-index: 100;
-    }
-    
-    /* تحسين شكل الجداول لليمين */
-    .stDataFrame {
-        width: 100%;
-        direction: rtl;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -204,7 +180,6 @@ def login():
     with c2:
         st.markdown("<h2 style='text-align: center;'>🔐 تسجيل الدخول</h2>", unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
-        # نستخدم markdown لضبط اتجاه النص في حقول الإدخال إذا لزم الأمر
         username = st.text_input("اسم المستخدم")
         password = st.text_input("كلمة المرور", type="password")
         if st.button("دخول", use_container_width=True):
@@ -227,11 +202,21 @@ def login():
 # 4. واجهات المستخدمين
 # ---------------------------------------------------------
 
-# --- واجهة الأدمن (محسنة) ---
+# --- واجهة الأدمن ---
 def admin_view(sh, user_name):
-    # تم إزالة الكود المسبب للتداخل (الأعمدة والصورة)
-    st.markdown(f"<h1 style='text-align: right;'>لوحة القيادة التنفيذية - {user_name}</h1>", unsafe_allow_html=True)
-    st.markdown("<br>", unsafe_allow_html=True)
+    # استخدام الأعمدة لوضع العنوان والصورة بشكل مرتب
+    # العمود الأول (كبير) للعنوان - العمود الثاني (صغير) للصورة
+    col_text, col_img = st.columns([5, 1])
+    
+    with col_text:
+        st.markdown(f"## لوحة القيادة التنفيذية - {user_name}")
+        
+    with col_img:
+        # تأكد من وجود الصورة بهذا الاسم في الملفات
+        if os.path.exists("logo.png"):
+            st.image("logo.png", use_container_width=True)
+    
+    st.markdown("---")
 
     try:
         ws_acts = sh.worksheet("Activities")
@@ -378,7 +363,12 @@ def admin_view(sh, user_name):
 
 # --- واجهة المالك ---
 def owner_view(sh, user_name, my_initiatives_str):
-    st.title(f"مرحباً، {user_name} 👋")
+    col_text, col_img = st.columns([5, 1])
+    with col_text:
+        st.title(f"مرحباً، {user_name} 👋")
+    with col_img:
+        if os.path.exists("logo.png"):
+            st.image("logo.png", use_container_width=True)
     
     if my_initiatives_str:
         my_list = [x.strip() for x in str(my_initiatives_str).split(',') if x.strip() != '']
@@ -500,6 +490,6 @@ def owner_view(sh, user_name, my_initiatives_str):
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 16.0 (Safe Mode - Black Screen Fixed)
+    System Version: 17.0 (Restored Visuals)
 </div>
 """, unsafe_allow_html=True)
