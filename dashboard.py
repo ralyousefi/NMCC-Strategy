@@ -423,9 +423,7 @@ def owner_view(sh, user_name, my_initiatives_str):
         if 'Owner' not in df_kpi.columns:
             st.warning("لم يتم العثور على عمود 'Owner' في ورقة المؤشرات.")
         else:
-            # استخدام البريد الإلكتروني للمطابقة بدلاً من الاسم
             current_email = st.session_state['user_info'].get('username', '').strip()
-            # محاولة المطابقة بالإيميل أو الاسم (لزيادة المرونة)
             my_kpis = df_kpi[
                 (df_kpi['Owner'].astype(str).str.strip() == current_email) | 
                 (df_kpi['Owner'].astype(str).str.strip() == user_name.strip())
@@ -473,13 +471,12 @@ def owner_view(sh, user_name, my_initiatives_str):
         st.error(f"خطأ في بيانات المؤشرات: {e}")
 
 # ================================
-# واجهة المشاهد (Viewer) - تعديل: مشاهدة المؤشرات فقط
+# واجهة المشاهد (Viewer) - الرسم البياني فقط
 # ================================
 def viewer_view(sh, user_name):
     st.markdown(f"### 👋 مرحباً، {user_name} (نسخة للاطلاع - المؤشرات فقط)")
     
     try:
-        # الاتصال بصفحة المؤشرات فقط
         ws_kpi = sh.worksheet("KPIs")
         df_kpi = pd.DataFrame(ws_kpi.get_all_records())
         
@@ -487,31 +484,13 @@ def viewer_view(sh, user_name):
             st.info("⚠️ لا توجد مؤشرات مسجلة في النظام.")
             return
 
-        # تنظيف البيانات للعرض
         df_kpi['Target'] = df_kpi['Target'].apply(safe_float)
         df_kpi['Actual'] = df_kpi['Actual'].apply(safe_float)
         
-        # 1. عرض الرسم البياني
         st.markdown("### 📊 الرسم البياني للمؤشرات")
         draw_kpi_chart(df_kpi)
         
-        st.markdown("---")
-        
-        # 2. عرض الجدول التفصيلي
-        st.markdown("### 📋 جدول تفاصيل المؤشرات")
-        st.dataframe(
-            df_kpi[['KPI_Name', 'Target', 'Actual', 'Owner', 'Unit', 'Frequency']],
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "KPI_Name": "اسم المؤشر",
-                "Target": "المستهدف",
-                "Actual": "المتحقق",
-                "Owner": "المسؤول",
-                "Unit": "الوحدة",
-                "Frequency": "الدورية"
-            }
-        )
+        # تم حذف الجدول التفصيلي بناءً على الطلب لحل مشكلة الأعمدة المفقودة.
 
     except Exception as e:
         st.error(f"خطأ في تحميل بيانات المؤشرات: {e}")
@@ -556,6 +535,6 @@ else:
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 18.0 (Viewer: KPIs Only)
+    System Version: 19.0 (Viewer: Chart Only - Table Removed)
 </div>
 """, unsafe_allow_html=True)
