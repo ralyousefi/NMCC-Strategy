@@ -47,11 +47,6 @@ st.markdown("""
         font-weight: bold;
     }
     
-    div[data-testid="metric-container"] label {
-        color: #0068c9; 
-        font-weight: bold;
-        font-size: 15px;
-    }
     .history-box {
         background-color: #eef5ff;
         padding: 15px;
@@ -236,31 +231,29 @@ def login():
 # 5. واجهات المستخدمين
 # ---------------------------------------------------------
 
-# --- دالة رسم Bar Chart لمجموعة محددة ---
+# --- دالة رسم Bar Chart ---
 def plot_group_barchart(df, group_title):
     if df.empty:
         st.info(f"لا توجد مؤشرات في مجموعة: {group_title}")
         return
 
-    # منطق تحديد الألوان
     def get_color(row):
         target, actual = row['Target'], row['Actual']
         direction = str(row.get('Direction', 'تصاعدي')).strip()
         
         if direction == 'تنازلي':
-            if actual <= target: return "#2ca02c" # أخضر (جيد)
-            else: return "#d62728" # أحمر (سيء)
+            if actual <= target: return "#2ca02c"
+            else: return "#d62728"
         else:
             if actual >= target:
-                if actual > target: return "#1f77b4" # أزرق (ممتاز)
-                return "#2ca02c" # أخضر (متحقق)
-            else: return "#d62728" # أحمر (متأخر)
+                if actual > target: return "#1f77b4"
+                return "#2ca02c"
+            else: return "#d62728"
 
     df['Color'] = df.apply(get_color, axis=1)
 
     fig = go.Figure()
     
-    # 1. الأعمدة (الفعلي)
     fig.add_trace(go.Bar(
         x=df['KPI_Name'], 
         y=df['Actual'], 
@@ -271,7 +264,6 @@ def plot_group_barchart(df, group_title):
         width=0.6
     ))
     
-    # 2. الخطوط (المستهدف)
     fig.add_trace(go.Scatter(
         x=df['KPI_Name'], 
         y=df['Target'], 
@@ -281,12 +273,10 @@ def plot_group_barchart(df, group_title):
     ))
 
     fig.update_layout(
-        # إضافة <br> لإجبار سطر جديد تحت العنوان
         title=dict(text=f"📊 {group_title}<br><span style='font-size:10px; color:transparent'>.</span>", x=0.5, xanchor='center'),
         barmode='overlay',                
         bargap=0.4,
         yaxis=dict(showgrid=True, gridcolor='lightgrey'),
-        # زيادة الهامش العلوي (t)
         margin=dict(t=100, b=50, l=20, r=20),
         legend=dict(orientation="h", y=1.1, x=0.5, xanchor='center')
     )
@@ -295,23 +285,20 @@ def plot_group_barchart(df, group_title):
 
 # --- دالة العرض المنظم (Layout) ---
 def display_kpi_layout(df_all):
-    # تصنيف البيانات
     df_all['Category'] = df_all['KPI_Name'].apply(get_kpi_category)
     
     g1 = df_all[df_all['Category'] == "QI4SD"]
     g2 = df_all[df_all['Category'] == "البحث والتطوير"]
     g3 = df_all[df_all['Category'] == "الكفاءة التشغيلية"]
     
-    # الصف الأول
     col1, col2 = st.columns(2)
     with col1:
-        plot_group_barchart(g1, "QI4SD")
+        plot_group_barchart(g1, "مجموعة QI4SD")
     with col2:
-        plot_group_barchart(g2, "البحث والتطوير")
+        plot_group_barchart(g2, "مجموعة البحث والتطوير")
         
-    # الصف الثاني
     st.markdown("---")
-    plot_group_barchart(g3, "الكفاءة التشغيلية")
+    plot_group_barchart(g3, "مجموعة الكفاءة التشغيلية")
 
 # ================================
 # واجهة المدير (Admin)
@@ -362,13 +349,15 @@ def admin_view(sh, user_name):
                     column_config={
                         "Activity": st.column_config.TextColumn("النشاط", width="large"),
                         "Progress": st.column_config.ProgressColumn("الإنجاز %", format="%d%%", min_value=0, max_value=100),
+                        "Start_Date": st.column_config.DateColumn("تاريخ البداية", format="YYYY-MM-DD"),
+                        "End_Date": st.column_config.DateColumn("تاريخ النهاية", format="YYYY-MM-DD"),
                         "Owner_Comment": st.column_config.TextColumn("آخر رد للموظف", width="medium"),
                         "Admin_Comment": st.column_config.TextColumn("سجل الملاحظات (للاطلاع)", width="medium"),
                         "New_Admin_Note": st.column_config.TextColumn("✍️ ملاحظة إدارية جديدة (اكتب هنا)", width="large"),
                         "Evidence_Link": st.column_config.LinkColumn("رابط الدليل", display_text="📎 فتح"),
-                        "Start_Date": None, "End_Date": None, "End_Date_DT": None, "Mabadara": None 
+                        "End_Date_DT": None, "Mabadara": None 
                     },
-                    disabled=["Activity", "Progress", "Owner_Comment", "Admin_Comment", "Mabadara"],
+                    disabled=["Activity", "Progress", "Owner_Comment", "Admin_Comment", "Mabadara", "Start_Date", "End_Date"],
                     hide_index=True,
                     use_container_width=True,
                     key="admin_acts_editor",
@@ -507,7 +496,7 @@ def admin_view(sh, user_name):
             st.error(f"خطأ KPI: {e}")
 
 # ================================
-# واجهة المالك (Owner) - (تحديث: إضافة تبويب كافة المؤشرات)
+# واجهة المالك (Owner) - (تبويبات + تعديل/حذف)
 # ================================
 def owner_view(sh, user_name, my_initiatives_str):
     if my_initiatives_str:
@@ -515,11 +504,9 @@ def owner_view(sh, user_name, my_initiatives_str):
     else:
         my_list = []
 
-    # تحميل البيانات مرة واحدة لاستخدامها في التبويبات
     try:
         ws_acts = sh.worksheet("Activities")
         all_data = pd.DataFrame(ws_acts.get_all_records())
-        # تنظيف بيانات الأنشطة
         all_data['Mabadara'] = all_data['Mabadara'].astype(str).str.strip()
         all_data['Activity'] = all_data['Activity'].astype(str).str.strip()
         if 'Admin_Comment' not in all_data.columns: all_data['Admin_Comment'] = ""
@@ -527,14 +514,10 @@ def owner_view(sh, user_name, my_initiatives_str):
         
         my_data = all_data[all_data['Mabadara'].isin(my_list)].copy()
 
-        # تحميل بيانات المؤشرات
         ws_kpi = sh.worksheet("KPIs")
         df_kpi = pd.DataFrame(ws_kpi.get_all_records())
-        
-        # تنظيف بيانات المؤشرات
         for col in ['Admin_Comment', 'Owner_Comment', 'Owner']:
             if col not in df_kpi.columns: df_kpi[col] = ""
-        
         df_kpi['Target'] = df_kpi['Target'].apply(safe_float)
         df_kpi['Actual'] = df_kpi['Actual'].apply(safe_float)
 
@@ -542,7 +525,7 @@ def owner_view(sh, user_name, my_initiatives_str):
         st.error(f"خطأ في تحميل البيانات: {e}")
         return
 
-    # --- إنشاء التبويبات ---
+    # --- التبويبات ---
     tab1, tab2, tab3 = st.tabs(["📋 تحديث الأنشطة", "✏️ تحديث مؤشراتي", "📊 كافة المؤشرات (للاطلاع)"])
 
     # 1. تبويب تحديث الأنشطة
@@ -567,7 +550,7 @@ def owner_view(sh, user_name, my_initiatives_str):
                                 new_row = [sel_init, new_act_name, str(new_act_start), str(new_act_end), 0, "", "", ""]
                                 ws_acts.append_row(new_row)
                                 st.success("تمت الإضافة!")
-                                time.sleep(1)
+                                time.sleep(1.5)
                                 st.rerun()
                             except Exception as e: st.error(f"خطأ: {e}")
 
@@ -579,9 +562,12 @@ def owner_view(sh, user_name, my_initiatives_str):
                 if sel_act_name:
                     row = acts_in_init[acts_in_init['Activity'] == sel_act_name].iloc[0]
                     
+                    # --- إعادة تفعيل قسم الإعدادات (تعديل وحذف) ---
                     with st.expander("⚙️ إعدادات النشاط (تعديل الاسم / حذف)"):
                         st.info("تنبيه: هذه الإجراءات تؤثر على هيكل النشاط.")
                         c_edit, c_delete = st.columns(2)
+                        
+                        # 1. تعديل الاسم
                         with c_edit:
                             st.markdown("##### ✏️ تعديل مسمى النشاط")
                             new_name_val = st.text_input("الاسم الجديد", value=sel_act_name, key="rename_act")
@@ -598,6 +584,7 @@ def owner_view(sh, user_name, my_initiatives_str):
                                     except Exception as e: st.error(f"حدث خطأ: {e}")
                                 else: st.warning("الاسم الجديد مطابق للاسم الحالي.")
 
+                        # 2. حذف النشاط
                         with c_delete:
                             st.markdown("##### 🗑️ حذف النشاط")
                             st.warning("سيتم حذف النشاط وسجله بالكامل.")
@@ -611,6 +598,7 @@ def owner_view(sh, user_name, my_initiatives_str):
                                         st.rerun()
                                     else: st.error("لم يتم العثور على النشاط.")
                                 except Exception as e: st.error(f"خطأ في الحذف: {e}")
+                    # -----------------------------------------------
 
                     if str(row.get('Admin_Comment', '')).strip():
                         st.markdown(f"<div class='admin-alert-box'>📢 <strong>ملاحظة من المدير:</strong><div class='history-box'>{row['Admin_Comment']}</div></div>", unsafe_allow_html=True)
@@ -661,7 +649,6 @@ def owner_view(sh, user_name, my_initiatives_str):
     # 2. تبويب تحديث مؤشراتي
     with tab2:
         st.markdown("### 📈 تحديث مؤشرات الأداء المسندة لي")
-        
         current_email = st.session_state['user_info'].get('username', '').strip()
         my_kpis = df_kpi[
             (df_kpi['Owner'].astype(str).str.strip() == current_email) | 
@@ -715,11 +702,10 @@ def owner_view(sh, user_name, my_initiatives_str):
                                 st.rerun()
                         except Exception as e: st.error(f"خطأ أثناء الحفظ: {e}")
 
-    # 3. تبويب كافة المؤشرات (الإضافة الجديدة)
+    # 3. تبويب كافة المؤشرات
     with tab3:
         st.markdown("### 📊 لوحة المؤشرات العامة (للاطلاع)")
         st.caption("تعرض هذه اللوحة جميع مؤشرات أداء المركز للمتابعة العامة.")
-        # استخدام دالة العرض الموجودة مسبقاً
         display_kpi_layout(df_kpi)
 
 # ================================
@@ -736,7 +722,6 @@ def viewer_view(sh, user_name):
         df_kpi['Target'] = df_kpi['Target'].apply(safe_float)
         df_kpi['Actual'] = df_kpi['Actual'].apply(safe_float)
         
-        # العرض المنظم
         display_kpi_layout(df_kpi)
         
     except Exception as e:
@@ -791,8 +776,6 @@ else:
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 29.0 (NMCC - 2026)
+    System Version: 32.0 (NMCC - 2026: Full Owner Control + Tabs)
 </div>
 """, unsafe_allow_html=True)
-
-
