@@ -231,7 +231,7 @@ def login():
 # 5. واجهات المستخدمين
 # ---------------------------------------------------------
 
-# --- دالة رسم Bar Chart ---
+# --- دالة رسم Bar Chart لمجموعة محددة ---
 def plot_group_barchart(df, group_title):
     if df.empty:
         st.info(f"لا توجد مؤشرات في مجموعة: {group_title}")
@@ -331,7 +331,7 @@ def admin_view(sh, user_name):
 
     tab1, tab2 = st.tabs(["📋 تفاصيل المبادرات", "📊 مؤشرات الأداء (المجموعات)"])
     
-    # --- تبويب المبادرات (تعديل: ترتيب الأعمدة) ---
+    # --- تبويب المبادرات ---
     with tab1:
         try:
             if 'Admin_Comment' not in df_acts.columns: df_acts['Admin_Comment'] = ""
@@ -344,10 +344,9 @@ def admin_view(sh, user_name):
                 df_filt = df_acts[df_acts['Mabadara'] == init].copy()
                 df_filt['New_Admin_Note'] = "" 
                 
-                # --- التعديل هنا: ترتيب الأعمدة وتسميتها ---
+                # ترتيب الأعمدة للمدير
                 edited_df = st.data_editor(
                     df_filt,
-                    # الترتيب في column_order (من اليمين لليسار لأن الاتجاه RTL)
                     column_order=[
                         "Activity", 
                         "Start_Date", 
@@ -363,11 +362,11 @@ def admin_view(sh, user_name):
                         "Start_Date": st.column_config.DateColumn("تاريخ البداية", format="YYYY-MM-DD", disabled=True),
                         "End_Date": st.column_config.DateColumn("تاريخ النهاية", format="YYYY-MM-DD", disabled=True),
                         "Progress": st.column_config.ProgressColumn("نسبة الانجاز", format="%d%%", min_value=0, max_value=100, disabled=True),
-                        "New_Admin_Note": st.column_config.TextColumn("ملاحظات ادارية جديدة", width="large"), # للكتابة
+                        "New_Admin_Note": st.column_config.TextColumn("ملاحظات ادارية جديدة", width="large"),
                         "Owner_Comment": st.column_config.TextColumn("اخر رد للموظف", width="medium", disabled=True),
                         "Admin_Comment": st.column_config.TextColumn("سجل الملاحظات", width="medium", disabled=True),
                         "Evidence_Link": st.column_config.LinkColumn("رابط الدليل", display_text="📎 فتح"),
-                        "End_Date_DT": None, "Mabadara": None 
+                        # تم إخفاء الأعمدة الزائدة من العرض فقط
                     },
                     hide_index=True,
                     use_container_width=True,
@@ -416,7 +415,7 @@ def admin_view(sh, user_name):
         except Exception as e:
             st.error(f"خطأ تحميل: {e}")
 
-    # --- تبويب المؤشرات (تعديل: ترتيب الأعمدة) ---
+    # --- تبويب المؤشرات (ترتيب الأعمدة وتصحيح الخطأ) ---
     with tab2:
         try:
             ws_kpi = sh.worksheet("KPIs")
@@ -428,7 +427,6 @@ def admin_view(sh, user_name):
             df_kpi['Target'] = df_kpi['Target'].apply(safe_float)
             df_kpi['Actual'] = df_kpi['Actual'].apply(safe_float)
             
-            # 1. عرض المخطط بالتنسيق الجديد
             display_kpi_layout(df_kpi)
 
             st.markdown("---")
@@ -445,13 +443,13 @@ def admin_view(sh, user_name):
 
             df_for_edit['New_Admin_Note'] = ""
             
-            # --- التعديل هنا: ترتيب الأعمدة وتسميتها ---
+            # تم حذف الأعمدة غير الموجودة (Unit, Direction, Frequency) من التهيئة لتجنب الخطأ
             edited_kpi = st.data_editor(
                 df_for_edit, 
                 num_rows="fixed", 
                 use_container_width=True, 
                 key="kpi_editor_admin",
-                # الترتيب من اليمين لليسار
+                # ترتيب الأعمدة المطلوب
                 column_order=[
                     "KPI_Name", 
                     "Target", 
@@ -468,10 +466,9 @@ def admin_view(sh, user_name):
                      "Owner_Comment": st.column_config.TextColumn("ملاحظات المالك", width="medium", disabled=True),
                      "New_Admin_Note": st.column_config.TextColumn("ملاحظة جديدة", width="large"),
                      "Admin_Comment": st.column_config.TextColumn("سجل المدير", width="medium", disabled=True),
-                     "Owner": st.column_config.TextColumn("المسؤول", disabled=True),
-                     "Category": None, "Unit": None, "Direction": None, "Frequency": None 
+                     "Owner": st.column_config.TextColumn("المسؤول", disabled=True)
                 },
-                disabled=["KPI_Name", "Actual", "Owner", "Owner_Comment", "Admin_Comment", "Category"]
+                disabled=["KPI_Name", "Actual", "Owner", "Owner_Comment", "Admin_Comment"]
             )
             
             if st.button("💾 حفظ تحديثات المؤشرات"):
@@ -582,39 +579,6 @@ def owner_view(sh, user_name, my_initiatives_str):
                 if sel_act_name:
                     row = acts_in_init[acts_in_init['Activity'] == sel_act_name].iloc[0]
                     
-                    with st.expander("⚙️ إعدادات النشاط (تعديل الاسم / حذف)"):
-                        st.info("تنبيه: هذه الإجراءات تؤثر على هيكل النشاط.")
-                        c_edit, c_delete = st.columns(2)
-                        with c_edit:
-                            st.markdown("##### ✏️ تعديل مسمى النشاط")
-                            new_name_val = st.text_input("الاسم الجديد", value=sel_act_name, key="rename_act")
-                            if st.button("تحديث الاسم"):
-                                if new_name_val.strip() != sel_act_name:
-                                    try:
-                                        cell = ws_acts.find(sel_act_name)
-                                        if cell:
-                                            ws_acts.update_cell(cell.row, cell.col, new_name_val)
-                                            st.success("تم تعديل الاسم بنجاح!")
-                                            time.sleep(1)
-                                            st.rerun()
-                                        else: st.error("لم يتم العثور على الخلية.")
-                                    except Exception as e: st.error(f"حدث خطأ: {e}")
-                                else: st.warning("الاسم الجديد مطابق للاسم الحالي.")
-
-                        with c_delete:
-                            st.markdown("##### 🗑️ حذف النشاط")
-                            st.warning("سيتم حذف النشاط وسجله بالكامل.")
-                            if st.button("تأكيد الحذف", type="primary"):
-                                try:
-                                    cell_del = ws_acts.find(sel_act_name)
-                                    if cell_del:
-                                        ws_acts.delete_rows(cell_del.row)
-                                        st.success("تم حذف النشاط.")
-                                        time.sleep(1)
-                                        st.rerun()
-                                    else: st.error("لم يتم العثور على النشاط.")
-                                except Exception as e: st.error(f"خطأ في الحذف: {e}")
-
                     if str(row.get('Admin_Comment', '')).strip():
                         st.markdown(f"<div class='admin-alert-box'>📢 <strong>ملاحظة من المدير:</strong><div class='history-box'>{row['Admin_Comment']}</div></div>", unsafe_allow_html=True)
 
@@ -789,6 +753,6 @@ else:
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 33.0 (NMCC - 2026: Admin Columns Ordered)
+    System Version: 34.0 (NMCC - 2026: Fix Column Order & Error)
 </div>
 """, unsafe_allow_html=True)
