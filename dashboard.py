@@ -47,6 +47,11 @@ st.markdown("""
         font-weight: bold;
     }
     
+    div[data-testid="metric-container"] label {
+        color: #d62728; 
+        font-weight: bold;
+        font-size: 15px;
+    }
     .history-box {
         background-color: #eef5ff;
         padding: 15px;
@@ -789,3 +794,4 @@ st.markdown("""
     System Version: 29.0 (NMCC - 2026)
 </div>
 """, unsafe_allow_html=True)
+
