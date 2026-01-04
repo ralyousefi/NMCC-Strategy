@@ -48,7 +48,7 @@ st.markdown("""
     }
     
     div[data-testid="metric-container"] label {
-        color: #d62728; 
+        color: #0068c9; 
         font-weight: bold;
         font-size: 15px;
     }
@@ -794,4 +794,5 @@ st.markdown("""
     System Version: 29.0 (NMCC - 2026)
 </div>
 """, unsafe_allow_html=True)
+
 
