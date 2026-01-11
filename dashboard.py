@@ -776,6 +776,7 @@ else:
 # --- Footer ---
 st.markdown("""
 <div class="footer">
-    System Version: 32.0 (NMCC - 2026: Full Owner Control + Tabs)
+    System Version: 32.0 (NMCC - 2026)
 </div>
 """, unsafe_allow_html=True)
+
