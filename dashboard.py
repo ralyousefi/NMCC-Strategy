@@ -325,7 +325,7 @@ def compute_trend(series: pd.Series) -> dict:
 
 
 def plot_kpi_trend(df_history: pd.DataFrame, kpi_name: str,
-                   direction: str = "تصاعدي", unit: str = ""):
+                   direction: str = "تصاعدي", unit: str = "", ctx: str = ""):
     """
     يرسم رسماً خطياً للاتجاه لمؤشر واحد.
     - خط الفعلي ملوَّن بناءً على الاتجاه
@@ -392,7 +392,7 @@ def plot_kpi_trend(df_history: pd.DataFrame, kpi_name: str,
         margin=dict(t=70, b=30, l=40, r=20), height=300,
         hovermode="x unified")
 
-    safe_key = kpi_name.replace(' ','_').replace('/','_')[:60]
+    safe_key = (kpi_name + ctx).replace(' ','_').replace('/','_').replace('-','_')[:80]
     st.plotly_chart(fig, use_container_width=True, key=f"trend_{safe_key}")
 
     with st.expander("📋 جدول البيانات التاريخية"):
@@ -442,7 +442,7 @@ def show_history_overview(df_history: pd.DataFrame, df_kpi: pd.DataFrame):
                 f" &nbsp;|&nbsp; آخر قيمة: <b>{kpi_hist['Actual'].iloc[-1]:.1f}</b>"
                 f"</div>",
                 unsafe_allow_html=True)
-            plot_kpi_trend(df_history, kpi, direction, unit)
+            plot_kpi_trend(df_history, kpi, direction, unit, ctx="_ov")
 
 
 # ---------------------------------------------------------
@@ -795,7 +795,7 @@ def admin_view(sh, user_name):
                         m3.metric("أعلى قيمة",      f"{kh['Actual'].max():.1f}")
                         m4.metric("أدنى قيمة",      f"{kh['Actual'].min():.1f}")
 
-                    plot_kpi_trend(df_history, sel_kpi, drx, unit)
+                    plot_kpi_trend(df_history, sel_kpi, drx, unit, ctx="_adm3")
 
                     st.markdown("---")
                     st.markdown("##### ➕ إضافة قيمة تاريخية يدوية")
@@ -1097,7 +1097,7 @@ def owner_view(sh, user_name, my_initiatives_str):
                 drx3 = str(kr3.get('Direction','تصاعدي')).strip()
                 unt3 = str(kr3.get('Unit','')).strip()
                 st.markdown(f"#### {kn3}")
-                plot_kpi_trend(df_hist3, kn3, drx3, unt3)
+                plot_kpi_trend(df_hist3, kn3, drx3, unt3, ctx="_own3")
                 st.markdown("---")
 
     # ── تبويب 4: كافة المؤشرات ──
