@@ -8,14 +8,6 @@ import re
 import time
 from datetime import datetime, date
 
-from permissions import (
-    apply_permissions, permission_badge, field_legend,
-    get_editable_fields, safe_update_row,
-    ACTIVITIES_PERMISSIONS, KPI_PERMISSIONS,
-    ACTIVITIES_BASE_CONFIG, KPI_BASE_CONFIG,
-    EDIT, VIEW, HIDDEN,
-)
-
 # ---------------------------------------------------------
 # 1. إعدادات الصفحة
 # ---------------------------------------------------------
@@ -679,51 +671,36 @@ def admin_view(sh, user_name):
             init    = st.selectbox("اختر المبادرة:", df_acts['Mabadara'].unique())
             df_filt = df_acts[df_acts['Mabadara'] == init].copy()
             df_filt['New_Admin_Note'] = ""
-            df_filt['New_Owner_Note'] = ""
-            # ── نظام الصلاحيات ──
-            _role = get_current_role()
-            permission_badge(_role)
-            field_legend(_role, ACTIVITIES_PERMISSIONS)
-            _cfg = apply_permissions(
-                df_filt, ACTIVITIES_PERMISSIONS, _role,
-                base_column_config=dict(ACTIVITIES_BASE_CONFIG, **{"_end":None,"Mabadara":None}),
-            )
-            edited = st.data_editor(
-                _cfg.df,
-                column_config=_cfg.column_config,
-                disabled=_cfg.disabled,
-                hide_index=True, use_container_width=True,
-                key="admin_acts_ed", num_rows="fixed",
-            )
+            edited  = st.data_editor(df_filt, column_config={
+                "Activity":       st.column_config.TextColumn("النشاط", width="large"),
+                "Progress":       st.column_config.ProgressColumn("الإنجاز %", format="%d%%", min_value=0, max_value=100),
+                "Start_Date":     st.column_config.DateColumn("تاريخ البداية", format="YYYY-MM-DD"),
+                "End_Date":       st.column_config.DateColumn("تاريخ النهاية", format="YYYY-MM-DD"),
+                "Owner_Comment":  st.column_config.TextColumn("رد الموظف", width="medium"),
+                "Admin_Comment":  st.column_config.TextColumn("سجل المدير", width="medium"),
+                "New_Admin_Note": st.column_config.TextColumn("✍️ ملاحظة إدارية جديدة", width="large"),
+                "Evidence_Link":  st.column_config.LinkColumn("رابط الدليل", display_text="📎 فتح"),
+                "_end": None, "Mabadara": None,
+            }, disabled=["Activity","Progress","Owner_Comment","Admin_Comment","Mabadara","Start_Date","End_Date"],
+            hide_index=True, use_container_width=True, key="admin_acts_ed", num_rows="fixed")
 
-            if st.button("💾 حفظ التحديثات (أنشطة)"):
+            if st.button("💾 حفظ الملاحظات (أنشطة)"):
                 with st.spinner("جاري الحفظ..."):
                     df_save = df_acts.drop(columns=['_end'], errors='ignore')
                     changed = False
-                    allowed = get_editable_fields(ACTIVITIES_PERMISSIONS, _role)
                     for _, row in edited.iterrows():
-                        mask = (df_save['Mabadara']==row['Mabadara'])&(df_save['Activity']==row['Activity'])
-                        if not mask.any(): continue
-                        # ملاحظة المدير الجديدة
-                        nn_admin = str(row.get('New_Admin_Note','')).strip()
-                        if nn_admin and 'New_Admin_Note' in allowed:
+                        nn = str(row['New_Admin_Note']).strip()
+                        if nn:
                             changed = True
-                            df_save.loc[mask,'Admin_Comment'] = append_timestamped_comment(
-                                df_save.loc[mask,'Admin_Comment'].values[0], nn_admin)
-                        # ملاحظة المالك الجديدة (إذا كان الدور Owner)
-                        nn_owner = str(row.get('New_Owner_Note','')).strip()
-                        if nn_owner and 'New_Owner_Note' in allowed:
-                            changed = True
-                            df_save.loc[mask,'Owner_Comment'] = append_timestamped_comment(
-                                df_save.loc[mask,'Owner_Comment'].values[0], nn_owner)
-                        # باقي الحقول القابلة للتعديل
-                        df_save, ch = safe_update_row(df_save, row, mask, ACTIVITIES_PERMISSIONS, _role)
-                        if ch: changed = True
+                            mask = (df_save['Mabadara']==row['Mabadara'])&(df_save['Activity']==row['Activity'])
+                            if mask.any():
+                                df_save.loc[mask,'Admin_Comment'] = append_timestamped_comment(
+                                    df_save.loc[mask,'Admin_Comment'].values[0], nn)
                     if changed:
                         ws_acts.update(values=[clean_df_for_gspread(df_save).columns.tolist()]
                                               + clean_df_for_gspread(df_save).values.tolist(), range_name='A1')
                         st.success("✅ تم الحفظ!"); time.sleep(1); st.rerun()
-                    else: st.info("لم تُكتب أي تغييرات.")
+                    else: st.info("لم تُكتب أي ملاحظات.")
 
             st.markdown("---"); st.markdown("##### 📜 السجل التاريخي للنشاط")
             sel_act = st.selectbox("اختر النشاط:", df_filt['Activity'].unique(), key="hist_act")
@@ -748,43 +725,29 @@ def admin_view(sh, user_name):
             df_kpi['Category'] = df_kpi['KPI_Name'].apply(get_kpi_category)
             dfe = df_kpi[df_kpi['Category']==fc].copy() if fc!="الكل" else df_kpi.copy()
             dfe['New_Admin_Note'] = ""
-            dfe['New_Owner_Note'] = ""
-            # ── نظام الصلاحيات ──
-            _role_k = get_current_role()
-            permission_badge(_role_k)
-            field_legend(_role_k, KPI_PERMISSIONS)
-            _cfg_k = apply_permissions(
-                dfe, KPI_PERMISSIONS, _role_k,
-                base_column_config=KPI_BASE_CONFIG,
-            )
-            ek = st.data_editor(
-                _cfg_k.df,
-                column_config=_cfg_k.column_config,
-                disabled=_cfg_k.disabled,
-                num_rows="fixed", use_container_width=True, key="kpi_ed_adm",
-            )
+            ek  = st.data_editor(dfe, num_rows="fixed", use_container_width=True, key="kpi_ed_adm",
+                column_config={
+                    "KPI_Name":      st.column_config.TextColumn("المؤشر", width="large"),
+                    "Target":        st.column_config.NumberColumn("المستهدف", required=True),
+                    "Actual":        st.column_config.NumberColumn("الفعلي"),
+                    "Owner":         st.column_config.TextColumn("المسؤول"),
+                    "Owner_Comment": st.column_config.TextColumn("ملاحظات المالك", width="medium"),
+                    "Admin_Comment": st.column_config.TextColumn("سجل المدير", width="medium"),
+                    "New_Admin_Note":st.column_config.TextColumn("✍️ ملاحظة جديدة", width="large"),
+                    "Category":None,"Unit":None,"Direction":None,"Frequency":None,
+                }, disabled=["KPI_Name","Actual","Owner","Owner_Comment","Admin_Comment","Category"])
             if st.button("💾 حفظ تحديثات المؤشرات"):
                 with st.spinner("جاري الحفظ..."):
                     changed = False
-                    allowed_k = get_editable_fields(KPI_PERMISSIONS, _role_k)
                     for _, row in ek.iterrows():
                         mask = df_kpi['KPI_Name'] == row['KPI_Name']
-                        if not mask.any(): continue
-                        # ملاحظة المدير
-                        nn_adm = str(row.get('New_Admin_Note','')).strip()
-                        if nn_adm and 'New_Admin_Note' in allowed_k:
-                            df_kpi.loc[mask,'Admin_Comment'] = append_timestamped_comment(
-                                df_kpi.loc[mask,'Admin_Comment'].values[0], nn_adm)
-                            changed = True
-                        # ملاحظة المالك
-                        nn_own = str(row.get('New_Owner_Note','')).strip()
-                        if nn_own and 'New_Owner_Note' in allowed_k:
-                            df_kpi.loc[mask,'Owner_Comment'] = append_timestamped_comment(
-                                df_kpi.loc[mask,'Owner_Comment'].values[0], nn_own)
-                            changed = True
-                        # باقي الحقول
-                        df_kpi, ch = safe_update_row(df_kpi, row, mask, KPI_PERMISSIONS, _role_k)
-                        if ch: changed = True
+                        if mask.any():
+                            if float(row['Target']) != float(df_kpi.loc[mask,'Target'].values[0]):
+                                df_kpi.loc[mask,'Target'] = row['Target']; changed=True
+                            nn = str(row['New_Admin_Note']).strip()
+                            if nn:
+                                df_kpi.loc[mask,'Admin_Comment'] = append_timestamped_comment(
+                                    df_kpi.loc[mask,'Admin_Comment'].values[0], nn); changed=True
                     if changed:
                         ws_kpi.update(values=[clean_df_for_gspread(df_kpi).columns.tolist()]
                                              + clean_df_for_gspread(df_kpi).values.tolist(), range_name='A1')
@@ -1091,43 +1054,31 @@ def owner_view(sh, user_name, my_initiatives_str):
                 m1.metric("المستهدف",kr['Target']); m2.metric("المتحقق الحالي",kr['Actual']); m3.metric("الوحدة",kr.get('Unit','-'))
                 if str(kr.get('Admin_Comment','')).strip():
                     st.markdown(f"<div class='admin-alert-box'>📢 <strong>ملاحظات المدير:</strong><div class='history-box'>{kr['Admin_Comment']}</div></div>", unsafe_allow_html=True)
-                # ── تحقق من صلاحية تعديل Actual ──
-                _role_o = get_current_role()
-                _can_edit_actual = 'Actual' in get_editable_fields(KPI_PERMISSIONS, _role_o)
-                permission_badge(_role_o)
                 with st.form("upd_kpi"):
-                    if _can_edit_actual:
-                        na2 = st.number_input("القيمة المتحققة", value=safe_float(kr['Actual']))
-                    else:
-                        st.metric("القيمة المتحققة (للاطلاع)", kr['Actual'])
-                        na2 = safe_float(kr['Actual'])
+                    na2 = st.number_input("القيمة المتحققة", value=safe_float(kr['Actual']))
                     st.write("💬 **سجل ملاحظاتك السابق:**")
                     pn2 = str(kr.get('Owner_Comment',''))
                     if pn2: st.markdown(f"<div class='history-box'>{pn2}</div>", unsafe_allow_html=True)
-                    nn3 = st.text_area("✍️ أضف ملاحظة جديدة (ستُرسل للمدير تلقائياً):")
+                    nn3 = st.text_area("أضف ملاحظة جديدة:")
                     if st.form_submit_button("💾 حفظ تحديث المؤشر"):
-                        if not _can_edit_actual and not nn3.strip():
-                            st.warning("⚠️ لا تملك صلاحية تعديل هذا الحقل.")
-                        else:
-                            try:
-                                sh3   = get_sheet_connection()
-                                ws3   = sh3.worksheet("KPIs")
-                                df3   = pd.DataFrame(ws3.get_all_records())
-                                if 'Owner_Comment' not in df3.columns: df3['Owner_Comment'] = ""
-                                mask3 = df3['KPI_Name'] == sk2
-                                if mask3.any():
-                                    fc3 = append_timestamped_comment(pn2, nn3)
-                                    if _can_edit_actual:
-                                        df3.loc[mask3,'Actual'] = na2
-                                    df3.loc[mask3,'Owner_Comment'] = fc3
-                                    ws3.update(values=[clean_df_for_gspread(df3).columns.tolist()]
-                                                      + clean_df_for_gspread(df3).values.tolist(), range_name='A1')
-                                    tgt3 = safe_float(df3.loc[mask3,'Target'].values[0])
-                                    save_kpi_snapshot(sk2, na2, tgt3, user_name,
-                                                      nn3[:80] if nn3 else "تحديث تلقائي")
-                                    st.success("✅ تم تحديث المؤشر وحفظه في السجل التاريخي!")
-                                    time.sleep(1); st.rerun()
-                            except Exception as e: st.error(f"خطأ: {e}")
+                        try:
+                            sh3   = get_sheet_connection()
+                            ws3   = sh3.worksheet("KPIs")
+                            df3   = pd.DataFrame(ws3.get_all_records())
+                            if 'Owner_Comment' not in df3.columns: df3['Owner_Comment'] = ""
+                            mask3 = df3['KPI_Name'] == sk2
+                            if mask3.any():
+                                fc3 = append_timestamped_comment(pn2, nn3)
+                                df3.loc[mask3,'Actual']        = na2
+                                df3.loc[mask3,'Owner_Comment'] = fc3
+                                ws3.update(values=[clean_df_for_gspread(df3).columns.tolist()]
+                                                  + clean_df_for_gspread(df3).values.tolist(), range_name='A1')
+                                tgt3 = safe_float(df3.loc[mask3,'Target'].values[0])
+                                save_kpi_snapshot(sk2, na2, tgt3, user_name,
+                                                  nn3[:80] if nn3 else "تحديث تلقائي")
+                                st.success("✅ تم تحديث المؤشر وحفظه في السجل التاريخي!")
+                                time.sleep(1); st.rerun()
+                        except Exception as e: st.error(f"خطأ: {e}")
 
     # ── تبويب 3: اتجاه مؤشراتي ──
     with tab3:
