@@ -401,7 +401,7 @@ def show_owner_alerts(df_acts: pd.DataFrame, owner_initiatives: list):
     if overdue_n > 0:
         st.markdown(
             f"<div class='alert-header alert-overdue'>"
-            f"🚨 لديك <strong>{overdue_n}</strong> نشاط متأخر يحتاج تحديثاً فورياً</div>",
+            f"🚨 لديك <strong>{overdue_n}</strong> نشاط متأخر يحتاج تحديث</div>",
             unsafe_allow_html=True)
     if risk_n > 0:
         st.markdown(
