@@ -392,7 +392,8 @@ def plot_kpi_trend(df_history: pd.DataFrame, kpi_name: str,
         margin=dict(t=70, b=30, l=40, r=20), height=300,
         hovermode="x unified")
 
-    st.plotly_chart(fig, use_container_width=True)
+    safe_key = kpi_name.replace(' ','_').replace('/','_')[:60]
+    st.plotly_chart(fig, use_container_width=True, key=f"trend_{safe_key}")
 
     with st.expander("📋 جدول البيانات التاريخية"):
         show = df[["Date", "Actual", "Target", "Recorded_By", "Note"]].copy()
@@ -584,7 +585,7 @@ def login():
 # ---------------------------------------------------------
 # 9. رسم Bar Chart
 # ---------------------------------------------------------
-def plot_group_barchart(df, group_title):
+def plot_group_barchart(df, group_title, ctx=""):
     if df.empty: st.info(f"لا توجد مؤشرات في: {group_title}"); return
     def get_color(row):
         t, a, d = row['Target'], row['Actual'], str(row.get('Direction','تصاعدي')).strip()
@@ -602,16 +603,17 @@ def plot_group_barchart(df, group_title):
         yaxis=dict(showgrid=True, gridcolor='lightgrey'),
         margin=dict(t=80, b=50, l=20, r=20),
         legend=dict(orientation="h", y=1.1, x=0.5, xanchor='center'))
-    st.plotly_chart(fig, use_container_width=True)
+    safe_key2 = (group_title + ctx).replace(' ','_').replace('/','_')[:80]
+    st.plotly_chart(fig, use_container_width=True, key=f"bar_{safe_key2}")
 
-def display_kpi_layout(df_all):
+def display_kpi_layout(df_all, ctx=""):
     df_all = df_all.copy()
     df_all['Category'] = df_all['KPI_Name'].apply(get_kpi_category)
     c1, c2 = st.columns(2)
-    with c1: plot_group_barchart(df_all[df_all['Category']=="QI4SD"], "مجموعة QI4SD")
-    with c2: plot_group_barchart(df_all[df_all['Category']=="البحث والتطوير"], "مجموعة البحث والتطوير")
+    with c1: plot_group_barchart(df_all[df_all['Category']=="QI4SD"], "مجموعة QI4SD", ctx)
+    with c2: plot_group_barchart(df_all[df_all['Category']=="البحث والتطوير"], "مجموعة البحث والتطوير", ctx)
     st.markdown("---")
-    plot_group_barchart(df_all[df_all['Category']=="الكفاءة التشغيلية"], "مجموعة الكفاءة التشغيلية")
+    plot_group_barchart(df_all[df_all['Category']=="الكفاءة التشغيلية"], "مجموعة الكفاءة التشغيلية", ctx)
 
 # ---------------------------------------------------------
 # 10. واجهة المدير
@@ -719,7 +721,7 @@ def admin_view(sh, user_name):
     with tab2:
         if df_kpi is None: st.error("تعذّر تحميل المؤشرات.")
         else:
-            display_kpi_layout(df_kpi)
+            display_kpi_layout(df_kpi, ctx="_adm_tab2")
             st.markdown("---"); st.markdown("#### ✏️ تحديث البيانات والملاحظات")
             fc = st.selectbox("📂 فلترة:", ["الكل"]+list(KPI_GROUPS.keys()), key="kpi_filt")
             df_kpi['Category'] = df_kpi['KPI_Name'].apply(get_kpi_category)
@@ -1101,7 +1103,7 @@ def owner_view(sh, user_name, my_initiatives_str):
     # ── تبويب 4: كافة المؤشرات ──
     with tab4:
         st.markdown("### 📊 لوحة المؤشرات العامة (للاطلاع)")
-        display_kpi_layout(df_kpi)
+        display_kpi_layout(df_kpi, ctx="_own_tab4")
 
 
 # ---------------------------------------------------------
@@ -1115,7 +1117,7 @@ def viewer_view(sh, user_name):
         if df_kpi.empty: st.info("⚠️ لا توجد مؤشرات."); return
         df_kpi['Target'] = df_kpi['Target'].apply(safe_float)
         df_kpi['Actual'] = df_kpi['Actual'].apply(safe_float)
-        display_kpi_layout(df_kpi)
+        display_kpi_layout(df_kpi, ctx="_viewer")
     except Exception as e: st.error(f"خطأ: {e}")
 
 
