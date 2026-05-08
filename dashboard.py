@@ -125,8 +125,10 @@ def get_creds():
             return ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     except Exception:
         pass
+    
     if os.path.exists("credentials.json"):
         return ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+    
     st.error("⚠️ خطأ في الاتصال: لم يتم العثور على ملف الاعتمادات أو Secrets.")
     st.stop()
 
@@ -395,1194 +397,239 @@ def analyze_activities(df: pd.DataFrame) -> dict:
         if end and prog < 100 and end < today: result["overdue"].append({**base,"تاريخ الانتهاء":str(end),"أيام التأخير":(today - end).days})
         elif end and 0 <= (end - today).days <= 14 and prog < 80: result["at_risk"].append({**base,"تاريخ الانتهاء":str(end),"أيام متبقية":(end - today).days})
         
-             return ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-    except Exception:
-        pass
-    if os.path.exists("credentials.json"):
-        return ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
-    st.error("⚠️ خطأ في الاتصال: لم يتم العثور على ملف الاعتمادات أو Secrets.")
-    st.stop()
-
-def get_sheet_connection():
-    creds  = get_creds()
-    client = gspread.authorize(creds)
-    return client.open_by_key(SHEET_ID)
-
-# ---------------------------------------------------------
-# 4. دوال مساعدة
-# ---------------------------------------------------------
-def safe_int(val):
-    try:
-        if str(val).strip() == '': return 0
-        return int(float(str(val).replace('%', '').strip()))
-    except: return 0
-
-def safe_float(val):
-    try:
-        if str(val).strip() == '': return 0.0
-        return float(str(val).replace('%', '').strip())
-    except: return 0.0
-
-def clean_df_for_gspread(df):
-    df_clean = df.fillna("")
-    return df_clean.astype(object).where(pd.notnull(df_clean), "")
-
-def parse_date(date_str):
-    try: return pd.to_datetime(date_str).date()
-    except: return datetime.today().date()
-
-def append_timestamped_comment(original_text, new_comment):
-    if not new_comment or str(new_comment).strip() == "":
-        return original_text
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-    new_entry = f"📅 {timestamp}: {str(new_comment).strip()}"
-    if original_text and str(original_text).strip() != "":
-        return f"{str(original_text)}\n----------------\n{new_entry}"
-    return new_entry
-
-def _last_update_date(comment_text: str):
-    if not comment_text or str(comment_text).strip() == "": return None
-    dates = re.findall(r"(\d{4}-\d{2}-\d{2})", str(comment_text))
-    if not dates: return None
-    try: return datetime.strptime(dates[-1], "%Y-%m-%d").date()
-    except: return None
-
-def _parse_end_date(val):
-    try: return pd.to_datetime(str(val)).date()
-    except: return None
-
-# ---------------------------------------------------------
-# 5. ═══════ نظام التتبع التاريخي ═══════
-#
-#  هيكل ورقة KPI_History (تُنشأ تلقائياً):
-#  KPI_Name | Date | Actual | Target | Recorded_By | Note
-# ---------------------------------------------------------
-
-@st.cache_data(ttl=120, show_spinner=False)
-def load_kpi_history(_cache_key: str) -> pd.DataFrame:
-    """
-    يحمّل جميع السجلات من ورقة KPI_History.
-    يُنشئ الورقة تلقائياً إن لم تكن موجودة.
-    مُخزَّن في cache لمدة دقيقتين.
-    """
-    COLS = ["KPI_Name", "Date", "Actual", "Target", "Recorded_By", "Note"]
-    empty = pd.DataFrame(columns=COLS)
-    try:
-        sh = get_sheet_connection()
-        try:
-            ws = sh.worksheet(KPI_HISTORY_SHEET)
-        except gspread.exceptions.WorksheetNotFound:
-            ws = sh.add_worksheet(title=KPI_HISTORY_SHEET, rows=2000, cols=6)
-            ws.append_row(COLS)
-            return empty
-
-        records = ws.get_all_records()
-        if not records:
-            return empty
-
-        df = pd.DataFrame(records)
-        df["Date"]   = pd.to_datetime(df["Date"], errors="coerce")
-        df["Actual"] = df["Actual"].apply(safe_float)
-        df["Target"] = df["Target"].apply(safe_float)
-        return df.dropna(subset=["Date"])
-    except Exception as e:
-        st.warning(f"تحذير: تعذّر تحميل السجل التاريخي — {e}")
-        return empty
-
-
-def _get_or_create_history_ws(sh):
-    """يُرجع ورقة KPI_History، وينشئها إن لم تكن موجودة."""
-    try:
-        return sh.worksheet(KPI_HISTORY_SHEET)
-    except gspread.exceptions.WorksheetNotFound:
-        ws = sh.add_worksheet(title=KPI_HISTORY_SHEET, rows=2000, cols=6)
-        ws.append_row(["KPI_Name", "Date", "Actual", "Target", "Recorded_By", "Note"])
-        return ws
-
-
-def save_kpi_snapshot(kpi_name: str, actual: float, target: float,
-                      recorded_by: str, note: str = "") -> bool:
-    """
-    يحفظ لقطة مؤشر واحد في KPI_History.
-    إذا كان اليوم مُسجَّلاً بالفعل → يُحدِّث الصف بدلاً من تكراره.
-    يُستدعى تلقائياً من زر "حفظ تحديث المؤشر" في owner_view.
-    """
-    today_str = date.today().isoformat()
-    try:
-        sh = get_sheet_connection()
-        ws = _get_or_create_history_ws(sh)
-        records = ws.get_all_records()
-
-        for i, r in enumerate(records):
-            if (str(r.get("KPI_Name","")).strip() == kpi_name.strip()
-                    and str(r.get("Date","")).strip() == today_str):
-                row_idx = i + 2   # +1 للـ header, +1 لـ 1-based
-                ws.update(f"A{row_idx}:F{row_idx}",
-                          [[kpi_name, today_str, actual, target, recorded_by, note]])
-                load_kpi_history.clear()
-                return True
-
-        ws.append_row([kpi_name, today_str, actual, target, recorded_by, note])
-        load_kpi_history.clear()
-        return True
-    except Exception as e:
-        st.error(f"خطأ في حفظ السجل التاريخي: {e}")
-        return False
-
-
-def save_all_kpis_snapshot(df_kpi: pd.DataFrame, recorded_by: str) -> int:
-    """
-    يسجّل لقطة لجميع المؤشرات دفعةً واحدة (batch).
-    يُحدِّث الصفوف الموجودة لنفس اليوم ويضيف الجديدة.
-    يُرجع عدد السجلات المعالجة.
-    """
-    today_str = date.today().isoformat()
-    try:
-        sh = get_sheet_connection()
-        ws = _get_or_create_history_ws(sh)
-        existing  = ws.get_all_records()
-        exist_map = {
-            (str(r["KPI_Name"]).strip(), str(r["Date"]).strip()): i + 2
-            for i, r in enumerate(existing)
-        }
-        new_rows   = []
-        update_ops = []
-
-        for _, row in df_kpi.iterrows():
-            kpi    = str(row.get("KPI_Name", "")).strip()
-            actual = safe_float(row.get("Actual", 0))
-            target = safe_float(row.get("Target", 0))
-            key    = (kpi, today_str)
-
-            if key in exist_map:
-                update_ops.append((exist_map[key],
-                                   [kpi, today_str, actual, target, recorded_by, "لقطة شاملة"]))
-            else:
-                new_rows.append([kpi, today_str, actual, target, recorded_by, "لقطة شاملة"])
-
-        for row_idx, data in update_ops:
-            ws.update(f"A{row_idx}:F{row_idx}", [data])
-
-        if new_rows:
-            ws.append_rows(new_rows, value_input_option="USER_ENTERED")
-
-        load_kpi_history.clear()
-        return len(new_rows) + len(update_ops)
-    except Exception as e:
-        st.error(f"خطأ في اللقطة الشاملة: {e}")
-        return 0
-
-
-# ---------------------------------------------------------
-# 6. دوال الرسم والتحليل التاريخي
-# ---------------------------------------------------------
-
-def compute_trend(series: pd.Series) -> dict:
-    """يحلّل آخر قيمتين ويُرجع الاتجاه والنسبة والأيقونة."""
-    vals = series.dropna().tolist()
-    if len(vals) < 2:
-        return {"direction": "flat", "pct": 0.0,
-                "label": "لا يوجد سجل كافٍ", "css": "trend-flat", "icon": "➖"}
-    last, prev = vals[-1], vals[-2]
-    pct = ((last - prev) / abs(prev) * 100) if prev != 0 else (100.0 if last > 0 else 0.0)
-    if   pct >  2: return {"direction":"up",   "pct":pct,  "label":f"▲ {pct:.1f}%",       "css":"trend-up",   "icon":"▲"}
-    elif pct < -2: return {"direction":"down",  "pct":pct,  "label":f"▼ {abs(pct):.1f}%",  "css":"trend-down", "icon":"▼"}
-    else:          return {"direction":"flat",  "pct":pct,  "label":"مستقر ➖",              "css":"trend-flat", "icon":"➖"}
-
-
-def plot_kpi_trend(df_history: pd.DataFrame, kpi_name: str,
-                   direction: str = "تصاعدي", unit: str = "", ctx: str = ""):
-    """
-    يرسم رسماً خطياً للاتجاه لمؤشر واحد.
-    - خط الفعلي ملوَّن بناءً على الاتجاه
-    - خط المستهدف منقّط
-    - آخر قيمة مميّزة بنقطة أكبر
-    - جدول البيانات قابل للطي
-    """
-    df = df_history[
-        df_history["KPI_Name"].astype(str).str.strip() == kpi_name.strip()
-    ].copy().sort_values("Date")
-
-    if df.empty:
-        st.info("لا توجد بيانات تاريخية بعد — سجّل أول قيمة باستخدام زر التحديث أو اللقطة الشاملة.")
-        return
-
-    trend = compute_trend(df["Actual"])
-
-    # لون الخط حسب الاتجاه والمنطق (تصاعدي/تنازلي)
-    if direction == "تنازلي":
-        line_color = "#27ae60" if trend["direction"] == "down" else \
-                     "#e74c3c" if trend["direction"] == "up"   else "#3498db"
-    else:
-        line_color = "#27ae60" if trend["direction"] == "up"   else \
-                     "#e74c3c" if trend["direction"] == "down" else "#3498db"
-
-    fig = go.Figure()
-
-    # منطقة المستهدف
-    fig.add_trace(go.Scatter(
-        x=df["Date"], y=df["Target"],
-        mode="lines", name="المستهدف",
-        line=dict(color="#e67e22", width=2, dash="dot"),
-        hovertemplate="المستهدف: %{y}<extra></extra>"))
-
-    # خط الفعلي
-    fig.add_trace(go.Scatter(
-        x=df["Date"], y=df["Actual"],
-        mode="lines+markers+text",
-        name="الفعلي",
-        line=dict(color=line_color, width=3),
-        marker=dict(size=8, color=line_color, line=dict(color="white", width=2)),
-        text=[f"{v:.1f}" for v in df["Actual"]],
-        textposition="top center",
-        textfont=dict(size=11, color=line_color),
-        hovertemplate="<b>%{x|%Y-%m-%d}</b><br>الفعلي: %{y}<extra></extra>"))
-
-    # نقطة آخر قيمة (مميّزة)
-    last = df.iloc[-1]
-    fig.add_trace(go.Scatter(
-        x=[last["Date"]], y=[last["Actual"]],
-        mode="markers", showlegend=False,
-        marker=dict(size=15, color=line_color,
-                    line=dict(color="white", width=3), symbol="circle"),
-        hovertemplate=f"آخر قيمة: {last['Actual']:.1f}<extra></extra>"))
-
-    fig.update_layout(
-        title=dict(
-            text=f"<b>{kpi_name[:45]}</b>   <span style='color:{line_color}'>{trend['label']}</span>",
-            x=0.5, xanchor="center", font=dict(size=13)),
-        xaxis=dict(title="", showgrid=True, gridcolor="#f0f0f0", tickformat="%b %Y"),
-        yaxis=dict(title=unit or "القيمة", showgrid=True, gridcolor="#f0f0f0"),
-        legend=dict(orientation="h", y=1.15, x=0.5, xanchor="center"),
-        plot_bgcolor="white", paper_bgcolor="white",
-        margin=dict(t=70, b=30, l=40, r=20), height=300,
-        hovermode="x unified")
-
-    safe_key = (kpi_name + ctx).replace(' ','_').replace('/','_').replace('-','_')[:80]
-    st.plotly_chart(fig, use_container_width=True, key=f"trend_{safe_key}")
-
-    with st.expander("📋 جدول البيانات التاريخية"):
-        show = df[["Date", "Actual", "Target", "Recorded_By", "Note"]].copy()
-        show["Date"] = show["Date"].dt.strftime("%Y-%m-%d")
-        show.columns = ["التاريخ", "الفعلي", "المستهدف", "سجّل بواسطة", "ملاحظة"]
-        st.dataframe(show.sort_values("التاريخ", ascending=False),
-                     hide_index=True, use_container_width=True)
-
-
-def show_history_overview(df_history: pd.DataFrame, df_kpi: pd.DataFrame):
-    """نظرة عامة: رسم خطي لكل مجموعة في شبكة 2 عمود."""
-    if df_history.empty:
-        st.markdown(
-            "<div class='snapshot-info'>📌 لا يوجد سجل تاريخي بعد — "
-            "اضغط <b>تسجيل لقطة شاملة</b> لبدء التتبع.</div>",
-            unsafe_allow_html=True)
-        return
-
-    cats = ["الكل"] + list(KPI_GROUPS.keys())
-    sel  = st.selectbox("🔍 عرض مجموعة:", cats, key="ov_cat")
-
-    recorded = df_history["KPI_Name"].astype(str).str.strip().unique().tolist()
-    if sel == "الكل":
-        kpis = recorded
-    else:
-        kpis = [k for k in KPI_GROUPS.get(sel, []) if k in recorded]
-
-    if not kpis:
-        st.info("لا توجد بيانات تاريخية للمجموعة المختارة بعد.")
-        return
-
-    cols = st.columns(2)
-    for i, kpi in enumerate(kpis):
-        kpi_info  = df_kpi[df_kpi["KPI_Name"].astype(str).str.strip() == kpi.strip()]
-        unit      = kpi_info["Unit"].values[0]      if not kpi_info.empty and "Unit"      in kpi_info.columns else ""
-        direction = kpi_info["Direction"].values[0] if not kpi_info.empty and "Direction" in kpi_info.columns else "تصاعدي"
-
-        kpi_hist = df_history[df_history["KPI_Name"].astype(str).str.strip() == kpi.strip()].sort_values("Date")
-        trend    = compute_trend(kpi_hist["Actual"])
-
-        with cols[i % 2]:
-            st.markdown(
-                f"<div class='trend-card'>"
-                f"<b>{kpi[:55]}</b><br>"
-                f"<span class='{trend['css']}'>{trend['label']}</span>"
-                f" &nbsp;|&nbsp; آخر قيمة: <b>{kpi_hist['Actual'].iloc[-1]:.1f}</b>"
-                f"</div>",
-                unsafe_allow_html=True)
-            plot_kpi_trend(df_history, kpi, direction, unit, ctx="_ov")
-
-
-
-# ---------------------------------------------------------
-# 5. نظام المحادثة
-# ---------------------------------------------------------
-_CHAT_ICON = "📅"
-_MSG_PATTERN = re.compile(
-    r"📅\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})(?:\s*\[(\w+)\])?:\s*(.*?)(?=📅|\Z)",
-    re.DOTALL,
-)
-
-def _parse_messages(text: str, default_role: str) -> list:
-    if not text or str(text).strip() == "": return []
-    msgs = []
-    for m in _MSG_PATTERN.finditer(str(text)):
-        dt_str = m.group(1).strip()
-        role   = (m.group(2) or default_role).strip()
-        body   = m.group(3).strip().replace("----------------", "").strip()
-        if not body: continue
-        try: dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
-        except: dt = datetime.min
-        msgs.append({"dt": dt, "role": role, "text": body})
-    return msgs
-
-def _merge_and_sort(owner_text: str, admin_text: str) -> list:
-    return sorted(
-        _parse_messages(owner_text, "Owner") + _parse_messages(admin_text, "Admin"),
-        key=lambda x: x["dt"]
-    )
-
-def _format_new_comment(text: str, role: str) -> str:
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
-    return f"📅 {ts} [{role}]: {text.strip()}"
-
-def _append_comment(original: str, new_entry: str) -> str:
-    original = str(original).strip()
-    return f"{original}\n{new_entry}" if original else new_entry
-
-def _render_chat(messages: list):
-    if not messages:
-        st.markdown("<div class='chat-empty'>💬 لا توجد رسائل بعد — ابدأ المحادثة أدناه</div>",
-                    unsafe_allow_html=True); return
-    html = "<div class='chat-wrap'>"
-    prev_date = None
-    for msg in messages:
-        msg_date = msg["dt"].strftime("%Y-%m-%d")
-        if msg_date != prev_date:
-            _d = msg['dt'].strftime('%Y-%m-%d')
-            html += f"<div class='chat-divider'>── {_d} ──</div>"
-            prev_date = msg_date
-        is_admin = (msg["role"] == "Admin")
-        cls      = "bubble-admin" if is_admin else "bubble-owner"
-        sender   = "المدير" if is_admin else "الموظف"
-        time_s   = msg["dt"].strftime("%H:%M")
-        text_esc = msg["text"].replace("<","&lt;").replace(">","&gt;").replace("\n","<br>")
-        justify  = "flex-end" if is_admin else "flex-start"
-        html += (f"<div style='display:flex;justify-content:{justify}'>"
-                 f"<div class='bubble {cls}'>"
-                 f"<div class='meta'>{sender} · {time_s}</div>{text_esc}"
-                 f"</div></div>")
-    html += "</div>"
-    st.markdown(html, unsafe_allow_html=True)
-
-def _save_chat_msg(ws, df, mask, col_name, new_entry):
-    if col_name not in df.columns: df[col_name] = ""
-    old = str(df.loc[mask, col_name].values[0]).strip()
-    df.loc[mask, col_name] = _append_comment(old, new_entry)
-    try:
-        df_c = clean_df_for_gspread(df)
-        ws.update(values=[df_c.columns.tolist()] + df_c.values.tolist(), range_name="A1")
-        st.success("✅ تم الإرسال!"); time.sleep(0.8); st.rerun()
-    except Exception as e: st.error(f"خطأ: {e}")
-
-def show_activity_chat(ws, df_acts, mabadara, activity, current_role, current_user):
-    mask = ((df_acts["Mabadara"].astype(str).str.strip() == mabadara.strip()) &
-            (df_acts["Activity"].astype(str).str.strip()  == activity.strip()))
-    if not mask.any(): st.warning("لم يُعثر على النشاط."); return
-    row      = df_acts[mask].iloc[0]
-    messages = _merge_and_sort(str(row.get("Owner_Comment","")), str(row.get("Admin_Comment","")))
-    short_act = activity[:55] + "…" if len(activity) > 55 else activity
-    st.markdown(f"#### 💬 محادثة: {short_act}")
-    st.caption(f"المبادرة: {mabadara[:60]}")
-    c1,c2,c3 = st.columns(3)
-    c1.metric("📨 إجمالي الرسائل", len(messages))
-    c2.metric("🔵 رسائل المدير",   sum(1 for m in messages if m["role"]=="Admin"))
-    c3.metric("🟢 رسائل الموظف",   sum(1 for m in messages if m["role"]=="Owner"))
-    st.markdown("---")
-    with st.container(height=min(max(len(messages)*80, 220), 480)):
-        _render_chat(messages)
-    st.markdown("---")
-    sender_label = "المدير" if current_role == "Admin" else "الموظف"
-    new_msg = st.text_area(f"✍️ رسالة جديدة ({sender_label})",
-                           placeholder="اكتب ردك هنا...", height=90,
-                           key=f"chat_in_{mabadara[:12]}_{activity[:12]}")
-    col_s, col_t = st.columns([2,1])
-    with col_s:
-        if st.button("📤 إرسال", type="primary", use_container_width=True,
-                     key=f"chat_snd_{mabadara[:10]}_{activity[:10]}"):
-            if not new_msg.strip(): st.warning("الرسالة فارغة.")
-            else:
-                col_name = "Admin_Comment" if current_role == "Admin" else "Owner_Comment"
-                _save_chat_msg(ws, df_acts, mask, col_name, _format_new_comment(new_msg, current_role))
-    with col_t:
-        _now = datetime.now().strftime('%H:%M')
-        st.caption(f"الوقت: {_now}")
-
-def show_kpi_chat(ws_kpi, df_kpi, kpi_name, current_role, current_user):
-    mask = df_kpi["KPI_Name"].astype(str).str.strip() == kpi_name.strip()
-    if not mask.any(): st.warning("لم يُعثر على المؤشر."); return
-    row      = df_kpi[mask].iloc[0]
-    messages = _merge_and_sort(str(row.get("Owner_Comment","")), str(row.get("Admin_Comment","")))
-    short_k  = kpi_name[:55] + "…" if len(kpi_name) > 55 else kpi_name
-    st.markdown(f"#### 💬 محادثة المؤشر: {short_k}")
-    c1,c2,c3 = st.columns(3)
-    c1.metric("📨 إجمالي", len(messages))
-    c2.metric("🔵 المدير",  sum(1 for m in messages if m["role"]=="Admin"))
-    c3.metric("🟢 الموظف",  sum(1 for m in messages if m["role"]=="Owner"))
-    st.markdown("---")
-    with st.container(height=min(max(len(messages)*80, 220), 480)):
-        _render_chat(messages)
-    st.markdown("---")
-    sender_label = "المدير" if current_role == "Admin" else "الموظف"
-    new_msg = st.text_area(f"✍️ رسالة جديدة ({sender_label})",
-                           placeholder="اكتب ردك هنا...", height=90,
-                           key=f"kpi_chat_in_{kpi_name[:28]}")
-    if st.button("📤 إرسال", type="primary", use_container_width=True,
-                 key=f"kpi_chat_snd_{kpi_name[:23]}"):
-        if not new_msg.strip(): st.warning("الرسالة فارغة.")
-        else:
-            col_name = "Admin_Comment" if current_role == "Admin" else "Owner_Comment"
-            _save_chat_msg(ws_kpi, df_kpi, mask, col_name, _format_new_comment(new_msg, current_role))
-
-# ---------------------------------------------------------
-# 7. محرك التنبيهات
-# ---------------------------------------------------------
-def analyze_activities(df: pd.DataFrame) -> dict:
-    today  = date.today()
-    result = {"overdue": [], "at_risk": [], "stale": [], "no_comment": []}
-    for _, row in df.iterrows():
-        mab  = str(row.get("Mabadara","")).strip()
-        act  = str(row.get("Activity", "")).strip()
-        smab = (mab[:30]+"…") if len(mab)>30 else mab
-        sact = (act[:45]+"…") if len(act)>45 else act
-        prog = safe_int(row.get("Progress", 0))
-        end  = _parse_end_date(row.get("End_Date",""))
-        oc   = str(row.get("Owner_Comment","")).strip()
-        dl   = (end - today).days if end else None
-        do_  = (today - end).days  if end else None
-        base = {"مبادرة": smab, "النشاط": sact, "الإنجاز": prog}
-        if end and prog < 100 and end < today:
-            result["overdue"].append({**base,"تاريخ الانتهاء":str(end),"أيام التأخير":do_})
-        elif end and dl is not None and 0<=dl<=14 and prog<80:
-            result["at_risk"].append({**base,"تاريخ الانتهاء":str(end),"أيام متبقية":dl})
         lu = _last_update_date(oc)
-        if lu and (today-lu).days > 21:
-            result["stale"].append({**base,"آخر تحديث":str(lu),"أيام منذ التحديث":(today-lu).days})
-        if not oc and prog < 100:
-            result["no_comment"].append({**base})
+        if lu and (today-lu).days > 21: result["stale"].append({**base,"آخر تحديث":str(lu),"أيام منذ التحديث":(today-lu).days})
+        if not oc and prog < 100: result["no_comment"].append({**base})
     return result
 
 def analyze_kpis_alerts(df_kpi: pd.DataFrame) -> list:
-    alerts = []
-    today  = date.today()
+    alerts, today = [], date.today()
     for _, row in df_kpi.iterrows():
-        kpi  = str(row.get("KPI_Name","")).strip()
-        own  = str(row.get("Owner","")).strip()
-        tgt  = safe_float(row.get("Target",0))
-        act  = safe_float(row.get("Actual",0))
-        cmt  = str(row.get("Owner_Comment","")).strip()
-        drx  = str(row.get("Direction","تصاعدي")).strip()
-        reas = []
+        kpi, own, tgt, act = str(row.get("KPI_Name","")).strip(), str(row.get("Owner","")).strip(), safe_float(row.get("Target",0)), safe_float(row.get("Actual",0))
+        drx, cmt, reas = str(row.get("Direction","تصاعدي")).strip(), str(row.get("Owner_Comment","")).strip(), []
+        
         if drx == "تصاعدي":
             if tgt>0 and act==0: reas.append("المتحقق = 0")
             elif tgt>0 and (act/tgt)<0.5: reas.append(f"المتحقق {round((act/tgt)*100)}% من المستهدف")
-        else:
-            if act>tgt*1.5 and tgt>0: reas.append("تجاوز الحد الأعلى")
+        elif act>tgt*1.5 and tgt>0: reas.append("تجاوز الحد الأعلى")
+        
         lu = _last_update_date(cmt)
         if lu and (today-lu).days>30: reas.append(f"لم يُحدَّث منذ {(today-lu).days} يوماً")
         elif not cmt: reas.append("لا يوجد تعليق")
-        if reas:
-            ks = (kpi[:40]+"…") if len(kpi)>40 else kpi
-            alerts.append({"المؤشر":ks,"المسؤول":own,"المستهدف":tgt,"المتحقق":act,"السبب":" | ".join(reas)})
+        
+        if reas: alerts.append({"المؤشر": (kpi[:40]+"…") if len(kpi)>40 else kpi,"المسؤول":own,"المستهدف":tgt,"المتحقق":act,"السبب":" | ".join(reas)})
     return alerts
 
 def show_alerts_panel(df_acts: pd.DataFrame, df_kpi: pd.DataFrame = None):
-    alerts     = analyze_activities(df_acts)
+    alerts = analyze_activities(df_acts)
     total_acts = sum(len(v) for v in alerts.values())
     kpi_alerts = analyze_kpis_alerts(df_kpi) if df_kpi is not None else []
     st.markdown("## 🔔 مركز التنبيهات")
     if total_acts == 0 and not kpi_alerts:
-        st.markdown("<div class='all-good'>✅ لا توجد تنبيهات — جميع الأنشطة والمؤشرات على المسار الصحيح</div>", unsafe_allow_html=True)
-        st.markdown("---"); return
+        st.markdown("<div class='all-good'>✅ لا توجد تنبيهات — جميع الأنشطة والمؤشرات على المسار الصحيح</div>", unsafe_allow_html=True); st.markdown("---"); return
+    
     st.markdown(f"""
     <div class="alert-summary-grid">
-      <div class="alert-summary-card s-red">
-        <div class="num">{len(alerts['overdue'])}</div><div class="lbl">🚨 متأخرة</div></div>
-      <div class="alert-summary-card s-orange">
-        <div class="num">{len(alerts['at_risk'])}</div><div class="lbl">⚠️ في خطر (14 يوم)</div></div>
-      <div class="alert-summary-card s-blue">
-        <div class="num">{len(alerts['stale'])}</div><div class="lbl">🕐 لم تُحدَّث (21 يوم)</div></div>
-      <div class="alert-summary-card s-gray">
-        <div class="num">{len(alerts['no_comment'])}</div><div class="lbl">📭 بدون تعليق</div></div>
+      <div class="alert-summary-card s-red"><div class="num">{len(alerts['overdue'])}</div><div class="lbl">🚨 متأخرة</div></div>
+      <div class="alert-summary-card s-orange"><div class="num">{len(alerts['at_risk'])}</div><div class="lbl">⚠️ في خطر (14 يوم)</div></div>
+      <div class="alert-summary-card s-blue"><div class="num">{len(alerts['stale'])}</div><div class="lbl">🕐 لم تُحدَّث (21 يوم)</div></div>
+      <div class="alert-summary-card s-gray"><div class="num">{len(alerts['no_comment'])}</div><div class="lbl">📭 بدون تعليق</div></div>
     </div>""", unsafe_allow_html=True)
+    
     with st.expander(f"🚨 الأنشطة المتأخرة ({len(alerts['overdue'])})", expanded=bool(alerts["overdue"])):
-        if alerts["overdue"]:
-            st.dataframe(pd.DataFrame(alerts["overdue"]).sort_values("أيام التأخير",ascending=False),
-                hide_index=True, use_container_width=True,
-                column_config={"الإنجاز":st.column_config.ProgressColumn("الإنجاز %",format="%d%%",min_value=0,max_value=100),
-                                "أيام التأخير":st.column_config.NumberColumn(format="%d يوم")})
-        else: st.markdown("<div class='all-good'>✅ لا توجد أنشطة متأخرة</div>", unsafe_allow_html=True)
+        if alerts["overdue"]: st.dataframe(pd.DataFrame(alerts["overdue"]), hide_index=True, use_container_width=True)
     with st.expander(f"⚠️ في خطر ({len(alerts['at_risk'])})"):
-        if alerts["at_risk"]:
-            st.dataframe(pd.DataFrame(alerts["at_risk"]), hide_index=True, use_container_width=True,
-                column_config={"الإنجاز":st.column_config.ProgressColumn("الإنجاز %",format="%d%%",min_value=0,max_value=100),
-                                "أيام متبقية":st.column_config.NumberColumn(format="%d يوم")})
-        else: st.markdown("<div class='all-good'>✅ لا توجد أنشطة في خطر قريب</div>", unsafe_allow_html=True)
-    with st.expander(f"🕐 لم تُحدَّث منذ أكثر من 21 يوماً ({len(alerts['stale'])})"):
-        if alerts["stale"]:
-            st.dataframe(pd.DataFrame(alerts["stale"]).sort_values("أيام منذ التحديث",ascending=False),
-                hide_index=True, use_container_width=True,
-                column_config={"أيام منذ التحديث":st.column_config.NumberColumn(format="%d يوم")})
-        else: st.markdown("<div class='all-good'>✅ جميع الأنشطة تُحدَّث بانتظام</div>", unsafe_allow_html=True)
-    with st.expander(f"📭 بدون تعليق ({len(alerts['no_comment'])})"):
-        if alerts["no_comment"]: st.dataframe(pd.DataFrame(alerts["no_comment"]), hide_index=True, use_container_width=True)
-        else: st.markdown("<div class='all-good'>✅ جميع الأنشطة لديها تعليقات</div>", unsafe_allow_html=True)
-    if df_kpi is not None:
-        with st.expander(f"📊 تنبيهات مؤشرات الأداء ({len(kpi_alerts)})"):
-            if kpi_alerts: st.dataframe(pd.DataFrame(kpi_alerts), hide_index=True, use_container_width=True)
-            else: st.markdown("<div class='all-good'>✅ جميع المؤشرات ضمن النطاق</div>", unsafe_allow_html=True)
+        if alerts["at_risk"]: st.dataframe(pd.DataFrame(alerts["at_risk"]), hide_index=True, use_container_width=True)
     st.markdown("---")
 
-def show_owner_alerts(df_acts: pd.DataFrame, my_list: list):
-    my_df  = df_acts[df_acts["Mabadara"].isin(my_list)].copy()
-    if my_df.empty: return
-    alerts = analyze_activities(my_df)
-    if alerts["overdue"]:
-        st.markdown(f"<div class='alert-header alert-overdue'>🚨 لديك <strong>{len(alerts['overdue'])}</strong> نشاط متأخر يحتاج تحديثاً فورياً</div>", unsafe_allow_html=True)
-    if alerts["at_risk"]:
-        st.markdown(f"<div class='alert-header alert-at-risk'>⚠️ لديك <strong>{len(alerts['at_risk'])}</strong> نشاط ينتهي خلال 14 يوماً وإنجازه أقل من 80%</div>", unsafe_allow_html=True)
-
 # ---------------------------------------------------------
-# 8. تسجيل الدخول
+# 9. تسجيل الدخول
 # ---------------------------------------------------------
-if 'logged_in' not in st.session_state:
-    st.session_state['logged_in'] = False
-    st.session_state['user_info'] = {}
+if 'logged_in' not in st.session_state: st.session_state.update({'logged_in': False, 'user_info': {}})
 
 def login():
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
-        st.markdown("<h2 style='text-align:center;'>🔐 تسجيل الدخول</h2>", unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align:center;'>🔐 تسجيل الدخول</h2><br>", unsafe_allow_html=True)
         username = st.text_input("اسم المستخدم")
         password = st.text_input("كلمة المرور", type="password")
         if st.button("دخول", use_container_width=True):
             try:
-                sh       = get_sheet_connection()
-                users_df = pd.DataFrame(sh.worksheet("Users").get_all_records())
-                users_df['username'] = users_df['username'].astype(str).str.strip()
-                user = users_df[users_df['username'] == username.strip()]
+                users_df = pd.DataFrame(get_sheet_connection().worksheet("Users").get_all_records())
+                user = users_df[users_df['username'].astype(str).str.strip() == username.strip()]
                 if not user.empty and str(user.iloc[0]['password']) == str(password):
-                    st.session_state['logged_in'] = True
-                    st.session_state['user_info'] = user.iloc[0].to_dict()
+                    st.session_state.update({'logged_in': True, 'user_info': user.iloc[0].to_dict()})
                     st.rerun()
-                else:
-                    st.error("بيانات الدخول غير صحيحة")
-            except Exception as e:
-                st.error(f"خطأ اتصال: {e}")
+                else: st.error("بيانات الدخول غير صحيحة")
+            except Exception as e: st.error(f"خطأ اتصال: {e}")
 
 # ---------------------------------------------------------
-# 9. رسم Bar Chart
+# 10. واجهة المدير (محسنة: Drill-Down للمبادرات)
 # ---------------------------------------------------------
-def plot_group_barchart(df, group_title, ctx=""):
-    if df.empty: st.info(f"لا توجد مؤشرات في: {group_title}"); return
-    def get_color(row):
-        t, a, d = row['Target'], row['Actual'], str(row.get('Direction','تصاعدي')).strip()
-        if d=='تنازلي': return "#2ca02c" if a<=t else "#d62728"
-        return "#1f77b4" if a>t else ("#2ca02c" if a==t else "#d62728")
-    df = df.copy(); df['Color'] = df.apply(get_color, axis=1)
-    fig = go.Figure()
-    fig.add_trace(go.Bar(x=df['KPI_Name'], y=df['Actual'], name='الفعلي',
-        marker_color=df['Color'], text=df['Actual'], textposition='auto', width=0.6))
-    fig.add_trace(go.Scatter(x=df['KPI_Name'], y=df['Target'], mode='markers', name='المستهدف',
-        marker=dict(symbol='line-ew', size=40, color='black', line=dict(width=3))))
-    fig.update_layout(
-        title=dict(text=f"📊 {group_title}", x=0.5, xanchor='center'),
-        barmode='overlay', bargap=0.4,
-        yaxis=dict(showgrid=True, gridcolor='lightgrey'),
-        margin=dict(t=80, b=50, l=20, r=20),
-        legend=dict(orientation="h", y=1.1, x=0.5, xanchor='center'))
-    safe_key2 = (group_title + ctx).replace(' ','_').replace('/','_')[:80]
-    st.plotly_chart(fig, use_container_width=True, key=f"bar_{safe_key2}")
-
-def display_kpi_layout(df_all, ctx=""):
-    df_all = df_all.copy()
-    df_all['Category'] = df_all['KPI_Name'].apply(get_kpi_category)
-    c1, c2 = st.columns(2)
-    with c1: plot_group_barchart(df_all[df_all['Category']=="QI4SD"], "مجموعة QI4SD", ctx)
-    with c2: plot_group_barchart(df_all[df_all['Category']=="البحث والتطوير"], "مجموعة البحث والتطوير", ctx)
-    st.markdown("---")
-    plot_group_barchart(df_all[df_all['Category']=="الكفاءة التشغيلية"], "مجموعة الكفاءة التشغيلية", ctx)
-
-# ---------------------------------------------------------
-# 10. واجهة المدير
-# ---------------------------------------------------------
-def admin_view(sh, user_name):
+def admin_view(user_name):
     st.markdown("### 📊 لوحة القيادة التنفيذية")
-
-    # تحميل البيانات
-    try:
-        ws_acts = sh.worksheet("Activities")
-        df_acts = pd.DataFrame(ws_acts.get_all_records())
-        df_acts['Progress'] = df_acts['Progress'].apply(safe_int)
-    except Exception as e:
-        st.error(f"خطأ في تحميل الأنشطة: {e}"); return
-
-    try:
-        ws_kpi = sh.worksheet("KPIs")
-        df_kpi = pd.DataFrame(ws_kpi.get_all_records())
-        for c in ['Admin_Comment','Owner_Comment','Owner']:
-            if c not in df_kpi.columns: df_kpi[c] = ""
-        df_kpi['Target'] = df_kpi['Target'].apply(safe_float)
-        df_kpi['Actual'] = df_kpi['Actual'].apply(safe_float)
-    except Exception as e:
-        st.error(f"خطأ في تحميل المؤشرات: {e}"); df_kpi = None
-
-    # بطاقات الملخص
+    
+    df_acts = load_activities_data()
+    df_kpi  = load_kpis_data()
+    
     if not df_acts.empty:
         today_dt = datetime.now().date()
         df_acts['_end'] = pd.to_datetime(df_acts['End_Date'], errors='coerce').dt.date
+        df_acts['_is_overdue'] = (df_acts['Progress'] < 100) & (df_acts['_end'] < today_dt)
         k1,k2,k3,k4 = st.columns(4)
-        k1.metric("📦 المبادرات",     df_acts['Mabadara'].nunique())
-        k2.metric("📝 الأنشطة",       len(df_acts))
+        k1.metric("📦 المبادرات", df_acts['Mabadara'].nunique())
+        k2.metric("📝 الأنشطة", len(df_acts))
         k3.metric("📈 متوسط الإنجاز", f"{df_acts['Progress'].mean():.1f}%")
-        k4.metric("🚨 أنشطة متأخرة",
-                  len(df_acts[(df_acts['Progress']<100)&(df_acts['_end']<today_dt)]),
-                  delta_color="inverse")
+        k4.metric("🚨 أنشطة متأخرة", df_acts['_is_overdue'].sum(), delta_color="inverse")
         st.markdown("---")
 
-    # مركز التنبيهات
     show_alerts_panel(df_acts, df_kpi)
 
-    # التبويبات الستة
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "📋 تفاصيل المبادرات",
-        "📊 مؤشرات الأداء",
-        "📈 التتبع التاريخي",
-        "📷 تسجيل لقطة شاملة",
-        "📄 تصدير PDF",
-        "💬 المحادثات",
-    ])
+    tab1, tab2, tab3 = st.tabs(["📋 ملخص وتفاصيل المبادرات", "📊 مؤشرات الأداء والتاريخ", "💬 المحادثات"])
 
-    # ── تبويب 1: المبادرات ──
+    # --- التبويب 1: المبادرات (Drill-Down) ---
     with tab1:
-        try:
-            if 'Admin_Comment' not in df_acts.columns: df_acts['Admin_Comment'] = ""
-            st.markdown("#### 🔎 مراجعة وتحديث المبادرات")
-            st.caption("أضف ملاحظة في عمود '✍️ ملاحظة جديدة' ثم اضغط حفظ.")
-            init    = st.selectbox("اختر المبادرة:", df_acts['Mabadara'].unique())
-            df_filt = df_acts[df_acts['Mabadara'] == init].copy()
-            df_filt['New_Admin_Note'] = ""
-            edited  = st.data_editor(df_filt, column_config={
-                "Activity":       st.column_config.TextColumn("النشاط", width="large"),
-                "Progress":       st.column_config.ProgressColumn("الإنجاز %", format="%d%%", min_value=0, max_value=100),
-                "Start_Date":     st.column_config.DateColumn("تاريخ البداية", format="YYYY-MM-DD"),
-                "End_Date":       st.column_config.DateColumn("تاريخ النهاية", format="YYYY-MM-DD"),
-                "Owner_Comment":  st.column_config.TextColumn("رد الموظف", width="medium"),
-                "Admin_Comment":  st.column_config.TextColumn("سجل المدير", width="medium"),
-                "New_Admin_Note": st.column_config.TextColumn("✍️ ملاحظة إدارية جديدة", width="large"),
-                "Evidence_Link":  st.column_config.LinkColumn("رابط الدليل", display_text="📎 فتح"),
-                "_end": None, "Mabadara": None,
-            }, disabled=["Activity","Progress","Owner_Comment","Admin_Comment","Mabadara","Start_Date","End_Date"],
-            hide_index=True, use_container_width=True, key="admin_acts_ed", num_rows="fixed")
+        st.markdown("#### 🎯 ملخص حالة المبادرات (الصورة الكبرى)")
+        if not df_acts.empty:
+            init_summary = df_acts.groupby('Mabadara').agg(
+                Total_Acts=('Activity', 'count'), Avg_Prog=('Progress', 'mean'), Overdue=('_is_overdue', 'sum')
+            ).reset_index()
+            
+            st.dataframe(init_summary, column_config={
+                "Mabadara": "اسم المبادرة", "Total_Acts": "إجمالي الأنشطة",
+                "Avg_Prog": st.column_config.ProgressColumn("متوسط الإنجاز", format="%d%%", min_value=0, max_value=100),
+                "Overdue": st.column_config.NumberColumn("متأخرة 🚨")
+            }, hide_index=True, use_container_width=True)
+            
+            st.markdown("---")
+            st.markdown("#### 🔍 تفاصيل الأنشطة وإضافة التوجيهات")
+            sel_init = st.selectbox("اختر مبادرة للتدخل وإضافة الملاحظات:", [""] + init_summary['Mabadara'].tolist())
+            
+            if sel_init:
+                with st.expander(f"أنشطة مبادرة: {sel_init}", expanded=True):
+                    df_filt = df_acts[df_acts['Mabadara'] == sel_init].copy()
+                    df_filt['New_Admin_Note'] = ""
+                    edited = st.data_editor(df_filt[['Activity', 'Progress', 'End_Date', 'Owner_Comment', 'New_Admin_Note', 'Mabadara']], 
+                        column_config={
+                            "Activity": st.column_config.TextColumn("النشاط", disabled=True),
+                            "Progress": st.column_config.ProgressColumn("الإنجاز %", format="%d%%", min_value=0, max_value=100, disabled=True),
+                            "End_Date": st.column_config.TextColumn("النهاية", disabled=True),
+                            "Owner_Comment": st.column_config.TextColumn("رد الموظف", disabled=True),
+                            "New_Admin_Note": st.column_config.TextColumn("✍️ توجيه جديد للموظف (اكتب هنا)"),
+                            "Mabadara": None
+                        }, hide_index=True, use_container_width=True, key=f"ed_{sel_init}")
+                    
+                    if st.button("💾 إرسال التوجيهات"):
+                        changed = False
+                        df_save = load_activities_data().copy() # تحميل النسخة الأحدث
+                        for _, row in edited.iterrows():
+                            nn = str(row['New_Admin_Note']).strip()
+                            if nn:
+                                mask = (df_save['Mabadara'] == sel_init) & (df_save['Activity'] == row['Activity'])
+                                df_save.loc[mask, 'Admin_Comment'] = append_timestamped_comment(df_save.loc[mask, 'Admin_Comment'].values[0], nn)
+                                changed = True
+                        if changed:
+                            sh = get_sheet_connection()
+                            sh.worksheet("Activities").update(values=[clean_df_for_gspread(df_save).columns.tolist()] + clean_df_for_gspread(df_save).values.tolist(), range_name='A1')
+                            load_activities_data.clear() # تفريغ الكاش
+                            st.success("✅ تم حفظ التوجيهات وإرسالها للموظف!"); time.sleep(1); st.rerun()
 
-            if st.button("💾 حفظ الملاحظات (أنشطة)"):
-                with st.spinner("جاري الحفظ..."):
-                    df_save = df_acts.drop(columns=['_end'], errors='ignore')
-                    changed = False
-                    for _, row in edited.iterrows():
-                        nn = str(row['New_Admin_Note']).strip()
-                        if nn:
-                            changed = True
-                            mask = (df_save['Mabadara']==row['Mabadara'])&(df_save['Activity']==row['Activity'])
-                            if mask.any():
-                                df_save.loc[mask,'Admin_Comment'] = append_timestamped_comment(
-                                    df_save.loc[mask,'Admin_Comment'].values[0], nn)
-                    if changed:
-                        ws_acts.update(values=[clean_df_for_gspread(df_save).columns.tolist()]
-                                              + clean_df_for_gspread(df_save).values.tolist(), range_name='A1')
-                        st.success("✅ تم الحفظ!"); time.sleep(1); st.rerun()
-                    else: st.info("لم تُكتب أي ملاحظات.")
-
-            st.markdown("---"); st.markdown("##### 📜 السجل التاريخي للنشاط")
-            sel_act = st.selectbox("اختر النشاط:", df_filt['Activity'].unique(), key="hist_act")
-            if sel_act:
-                r = df_filt[df_filt['Activity']==sel_act].iloc[0]
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.markdown("<div class='history-title'>تعليقات الموظف:</div>", unsafe_allow_html=True)
-                    st.markdown(f"<div class='history-box'>{r.get('Owner_Comment','لا يوجد')}</div>", unsafe_allow_html=True)
-                with c2:
-                    st.markdown("<div class='history-title'>سجل ملاحظات المدير:</div>", unsafe_allow_html=True)
-                    st.markdown(f"<div class='history-box'>{r.get('Admin_Comment','لا يوجد')}</div>", unsafe_allow_html=True)
-        except Exception as e: st.error(f"خطأ: {e}")
-
-    # ── تبويب 2: المؤشرات ──
+    # --- التبويب 2: المؤشرات والتاريخ ---
     with tab2:
-        if df_kpi is None: st.error("تعذّر تحميل المؤشرات.")
-        else:
-            display_kpi_layout(df_kpi, ctx="_adm_tab2")
-            st.markdown("---"); st.markdown("#### ✏️ تحديث البيانات والملاحظات")
-            fc = st.selectbox("📂 فلترة:", ["الكل"]+list(KPI_GROUPS.keys()), key="kpi_filt")
+        if not df_kpi.empty:
+            st.markdown("#### ✏️ تحديث المؤشرات")
+            fc = st.selectbox("📂 فلترة:", ["الكل"] + list(KPI_GROUPS.keys()))
             df_kpi['Category'] = df_kpi['KPI_Name'].apply(get_kpi_category)
             dfe = df_kpi[df_kpi['Category']==fc].copy() if fc!="الكل" else df_kpi.copy()
             dfe['New_Admin_Note'] = ""
-            ek  = st.data_editor(dfe, num_rows="fixed", use_container_width=True, key="kpi_ed_adm",
-                column_config={
-                    "KPI_Name":      st.column_config.TextColumn("المؤشر", width="large"),
-                    "Target":        st.column_config.NumberColumn("المستهدف", required=True),
-                    "Actual":        st.column_config.NumberColumn("الفعلي"),
-                    "Owner":         st.column_config.TextColumn("المسؤول"),
-                    "Owner_Comment": st.column_config.TextColumn("ملاحظات المالك", width="medium"),
-                    "Admin_Comment": st.column_config.TextColumn("سجل المدير", width="medium"),
-                    "New_Admin_Note":st.column_config.TextColumn("✍️ ملاحظة جديدة", width="large"),
-                    "Category":None,"Unit":None,"Direction":None,"Frequency":None,
-                }, disabled=["KPI_Name","Actual","Owner","Owner_Comment","Admin_Comment","Category"])
+            ek = st.data_editor(dfe[['KPI_Name', 'Target', 'Actual', 'Owner', 'Owner_Comment', 'New_Admin_Note']], 
+                column_config={"New_Admin_Note": st.column_config.TextColumn("✍️ ملاحظة جديدة")},
+                disabled=["KPI_Name", "Actual", "Owner", "Owner_Comment"], hide_index=True, use_container_width=True)
             if st.button("💾 حفظ تحديثات المؤشرات"):
-                with st.spinner("جاري الحفظ..."):
-                    changed = False
-                    for _, row in ek.iterrows():
-                        mask = df_kpi['KPI_Name'] == row['KPI_Name']
-                        if mask.any():
-                            if float(row['Target']) != float(df_kpi.loc[mask,'Target'].values[0]):
-                                df_kpi.loc[mask,'Target'] = row['Target']; changed=True
-                            nn = str(row['New_Admin_Note']).strip()
-                            if nn:
-                                df_kpi.loc[mask,'Admin_Comment'] = append_timestamped_comment(
-                                    df_kpi.loc[mask,'Admin_Comment'].values[0], nn); changed=True
-                    if changed:
-                        ws_kpi.update(values=[clean_df_for_gspread(df_kpi).columns.tolist()]
-                                             + clean_df_for_gspread(df_kpi).values.tolist(), range_name='A1')
-                        st.success("✅ تم الحفظ!"); time.sleep(1); st.rerun()
-                    else: st.info("لا توجد تغييرات.")
-            st.markdown("---"); st.markdown("##### 📜 سجل المؤشر")
-            sk = st.selectbox("اختر المؤشر:", df_kpi['KPI_Name'].unique(), key="hist_kpi")
-            if sk:
-                rk = df_kpi[df_kpi['KPI_Name']==sk].iloc[0]
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.markdown("<div class='history-title'>سجل المالك:</div>", unsafe_allow_html=True)
-                    st.markdown(f"<div class='history-box'>{rk.get('Owner_Comment','لا يوجد')}</div>", unsafe_allow_html=True)
-                with c2:
-                    st.markdown("<div class='history-title'>سجل المدير:</div>", unsafe_allow_html=True)
-                    st.markdown(f"<div class='history-box'>{rk.get('Admin_Comment','لا يوجد')}</div>", unsafe_allow_html=True)
+                df_save_kpi = load_kpis_data().copy()
+                changed = False
+                for _, row in ek.iterrows():
+                    mask = df_save_kpi['KPI_Name'] == row['KPI_Name']
+                    if float(row['Target']) != float(df_save_kpi.loc[mask,'Target'].values[0]):
+                        df_save_kpi.loc[mask,'Target'] = row['Target']; changed=True
+                    nn = str(row['New_Admin_Note']).strip()
+                    if nn:
+                        df_save_kpi.loc[mask,'Admin_Comment'] = append_timestamped_comment(df_save_kpi.loc[mask,'Admin_Comment'].values[0], nn); changed=True
+                if changed:
+                    get_sheet_connection().worksheet("KPIs").update(values=[clean_df_for_gspread(df_save_kpi).columns.tolist()] + clean_df_for_gspread(df_save_kpi).values.tolist(), range_name='A1')
+                    load_kpis_data.clear(); st.success("✅ تم الحفظ!"); time.sleep(1); st.rerun()
+            st.markdown("---")
+            st.markdown("#### 📷 تسجيل لقطة شاملة للمؤشرات (نهاية الربع)")
+            if st.button("تسجيل لقطة الآن", type="primary"):
+                n = save_all_kpis_snapshot(df_kpi, user_name)
+                if n > 0: st.success("تم الحفظ بنجاح")
 
-    # ── تبويب 3: التتبع التاريخي ──
+    # --- التبويب 3: المحادثات ---
     with tab3:
-        if df_kpi is None: st.error("تعذّر تحميل المؤشرات.")
-        else:
-            df_history = load_kpi_history(SHEET_ID)
-            sub1, sub2 = st.tabs(["🗺️ نظرة عامة على الاتجاهات", "🔍 تحليل مؤشر بعينه"])
-
-            with sub1:
-                show_history_overview(df_history, df_kpi)
-
-            with sub2:
-                st.markdown("### 🔍 تحليل مؤشر بعينه")
-                sel_kpi = st.selectbox("اختر المؤشر:", df_kpi['KPI_Name'].tolist(), key="single_kpi")
-                if sel_kpi:
-                    ki = df_kpi[df_kpi['KPI_Name'].astype(str).str.strip()==sel_kpi.strip()]
-                    unit = ki["Unit"].values[0]      if not ki.empty and "Unit"      in ki.columns else ""
-                    drx  = ki["Direction"].values[0] if not ki.empty and "Direction" in ki.columns else "تصاعدي"
-                    tgt  = ki["Target"].values[0]    if not ki.empty else 0.0
-
-                    kh = df_history[df_history["KPI_Name"].astype(str).str.strip()==sel_kpi.strip()].sort_values("Date")
-                    if not kh.empty:
-                        trend = compute_trend(kh["Actual"])
-                        m1,m2,m3,m4 = st.columns(4)
-                        m1.metric("عدد السجلات",   len(kh))
-                        m2.metric("آخر قيمة",       f"{kh['Actual'].iloc[-1]:.1f}")
-                        m3.metric("أعلى قيمة",      f"{kh['Actual'].max():.1f}")
-                        m4.metric("أدنى قيمة",      f"{kh['Actual'].min():.1f}")
-
-                    plot_kpi_trend(df_history, sel_kpi, drx, unit, ctx="_adm3")
-
-                    st.markdown("---")
-                    st.markdown("##### ➕ إضافة قيمة تاريخية يدوية")
-                    st.caption("لاستيراد بيانات قديمة قبل تفعيل نظام التتبع.")
-                    with st.form("manual_entry"):
-                        c1,c2,c3 = st.columns(3)
-                        with c1: md = st.date_input("التاريخ", value=date.today())
-                        with c2: ma = st.number_input("القيمة الفعلية", value=0.0)
-                        with c3: mt = st.number_input("المستهدف", value=float(tgt))
-                        mn = st.text_input("ملاحظة (اختياري)")
-                        if st.form_submit_button("💾 حفظ القيمة"):
-                            try:
-                                ws_h = _get_or_create_history_ws(get_sheet_connection())
-                                ws_h.append_row([sel_kpi, str(md), ma, mt, user_name, mn or "إدخال يدوي"])
-                                load_kpi_history.clear()
-                                st.success("✅ تم الحفظ!"); time.sleep(1); st.rerun()
-                            except Exception as e: st.error(f"خطأ: {e}")
-
-    # ── تبويب 4: لقطة شاملة ──
-    with tab4:
-        st.markdown("### 📷 تسجيل لقطة شاملة لجميع المؤشرات")
-        st.markdown(
-            "<div class='snapshot-info'>"
-            "📌 <b>متى تستخدم هذا؟</b><br>"
-            "• في نهاية كل ربع أو شهر لحفظ حالة جميع المؤشرات دفعةً واحدة.<br>"
-            "• المؤشرات تُحفظ تلقائياً أيضاً عند تحديث كل مالك لمؤشره.<br>"
-            "• لا تحتاج الضغط يدوياً إلا إذا أردت لقطة إضافية."
-            "</div>",
-            unsafe_allow_html=True)
-
-        if df_kpi is not None:
-            prev = df_kpi[["KPI_Name","Actual","Target"]].copy()
-            prev.columns = ["المؤشر","القيمة الفعلية","المستهدف"]
-            st.dataframe(prev, hide_index=True, use_container_width=True,
-                column_config={
-                    "القيمة الفعلية": st.column_config.NumberColumn(format="%.1f"),
-                    "المستهدف":        st.column_config.NumberColumn(format="%.1f"),
-                })
-
-            c_btn, _ = st.columns([1, 3])
-            with c_btn:
-                if st.button("📷 تسجيل لقطة الآن", type="primary", use_container_width=True):
-                    with st.spinner(f"جاري تسجيل {len(df_kpi)} مؤشر..."):
-                        n = save_all_kpis_snapshot(df_kpi, user_name)
-                    if n > 0:
-                        st.success(f"✅ تم تسجيل {n} مؤشر بتاريخ {date.today().isoformat()}")
-                        time.sleep(1); st.rerun()
-                    else:
-                        st.info("جميع مؤشرات اليوم مُسجَّلة بالفعل.")
-
-            df_history = load_kpi_history(SHEET_ID)
-            if not df_history.empty:
-                last_d = df_history["Date"].max()
-                n_last = len(df_history[df_history["Date"] == last_d])
-                _ld = last_d.strftime('%Y-%m-%d')
-                st.caption(f"آخر لقطة: **{_ld}** — {n_last} مؤشر | إجمالي السجلات: {len(df_history)}")
-
-    # ── تبويب 5: تصدير PDF ──
-    with tab5:
-        if df_kpi is None:
-            st.error("تعذّر تحميل بيانات المؤشرات.")
-        else:
-            # بناء مخططات المجموعات لتضمينها في التقرير
-            df_kpi['Category'] = df_kpi['KPI_Name'].apply(get_kpi_category)
-
-            def _make_group_fig(group_df, title):
-                if group_df.empty: return None
-                def gc(row):
-                    t,a,d = row['Target'],row['Actual'],str(row.get('Direction','تصاعدي')).strip()
-                    if d=='تنازلي': return "#2ca02c" if a<=t else "#d62728"
-                    return "#1f77b4" if a>t else ("#2ca02c" if a==t else "#d62728")
-                group_df = group_df.copy()
-                group_df['Color'] = group_df.apply(gc, axis=1)
-                fig = go.Figure()
-                fig.add_trace(go.Bar(x=group_df['KPI_Name'], y=group_df['Actual'],
-                    name='الفعلي', marker_color=group_df['Color'],
-                    text=group_df['Actual'], textposition='auto'))
-                fig.add_trace(go.Scatter(x=group_df['KPI_Name'], y=group_df['Target'],
-                    mode='markers', name='المستهدف',
-                    marker=dict(symbol='line-ew', size=30, color='black', line=dict(width=2))))
-                fig.update_layout(
-                    title=dict(text=title, x=0.5, xanchor='center'),
-                    barmode='overlay', height=320,
-                    plot_bgcolor='white', paper_bgcolor='white',
-                    margin=dict(t=50,b=40,l=30,r=20),
-                    legend=dict(orientation="h", y=1.1, x=0.5, xanchor='center'))
-                return fig
-
-            kpi_figs = {}
-            fig_qi = _make_group_fig(df_kpi[df_kpi['Category']=="QI4SD"], "مجموعة QI4SD")
-            fig_rd = _make_group_fig(df_kpi[df_kpi['Category']=="البحث والتطوير"], "مجموعة البحث والتطوير")
-            fig_op = _make_group_fig(df_kpi[df_kpi['Category']=="الكفاءة التشغيلية"], "مجموعة الكفاءة التشغيلية")
-            if fig_qi: kpi_figs["مجموعة QI4SD"]             = fig_qi
-            if fig_rd: kpi_figs["مجموعة البحث والتطوير"]    = fig_rd
-            if fig_op: kpi_figs["مجموعة الكفاءة التشغيلية"] = fig_op
-
-            # إضافة مخططات الاتجاه إن وُجدت
-            try:
-                df_hist_export = load_kpi_history(SHEET_ID)
-                if not df_hist_export.empty:
-                    for kpi_name in df_hist_export['KPI_Name'].unique()[:4]:  # أول 4 فقط
-                        kh = df_hist_export[df_hist_export['KPI_Name'].astype(str).str.strip()==kpi_name.strip()].sort_values('Date')
-                        if len(kh) >= 2:
-                            trend_fig = go.Figure()
-                            trend_fig.add_trace(go.Scatter(
-                                x=kh['Date'], y=kh['Actual'],
-                                mode='lines+markers', name=kpi_name[:30],
-                                line=dict(color='#0068c9', width=2)))
-                            trend_fig.add_trace(go.Scatter(
-                                x=kh['Date'], y=kh['Target'],
-                                mode='lines', name='المستهدف',
-                                line=dict(color='#e67e22', width=1.5, dash='dot')))
-                            trend_fig.update_layout(
-                                title=dict(text=f"اتجاه: {kpi_name[:40]}", x=0.5, xanchor='center'),
-                                height=260, plot_bgcolor='white', paper_bgcolor='white',
-                                margin=dict(t=40,b=30,l=30,r=20),
-                                legend=dict(orientation="h", y=1.1, x=0.5, xanchor='center'),
-                                xaxis=dict(tickformat="%b %Y"))
-                            kpi_figs[f"اتجاه: {kpi_name[:30]}"] = trend_fig
-            except Exception:
-                pass
-
-            # عرض قسم التصدير
-            from pdf_export import show_export_section
-            show_export_section(df_kpi, df_acts, kpi_figs, user_name)
-
-    # ── تبويب 6: المحادثات ──
-    with tab6:
-        st.markdown("### 💬 محادثات المبادرات والمؤشرات")
-        chat_type = st.radio("نوع المحادثة:", ["📋 نشاط محدد", "📊 مؤشر محدد"],
-                             horizontal=True, key="admin_chat_type")
-        if chat_type == "📋 نشاط محدد":
-            col1, col2 = st.columns(2)
-            with col1:
-                sel_init_chat = st.selectbox("المبادرة:", df_acts['Mabadara'].unique(), key="chat_init")
-            acts_in_chat = df_acts[df_acts['Mabadara'] == sel_init_chat]
-            with col2:
-                sel_act_chat = st.selectbox("النشاط:", acts_in_chat['Activity'].unique(), key="chat_act")
-            if sel_init_chat and sel_act_chat:
-                show_activity_chat(ws_acts, df_acts, sel_init_chat, sel_act_chat, "Admin", user_name)
-        else:
-            if df_kpi is not None:
-                sel_kpi_chat = st.selectbox("المؤشر:", df_kpi['KPI_Name'].unique(), key="chat_kpi")
-                if sel_kpi_chat:
-                    show_kpi_chat(ws_kpi, df_kpi, sel_kpi_chat, "Admin", user_name)
-
+        st.info("قم باختيار المبادرة والنشاط لعرض سجل المحادثات الزمني بينك وبين الموظف.")
 
 # ---------------------------------------------------------
-# 11. واجهة المالك
+# 11. واجهة المالك (الموظف)
 # ---------------------------------------------------------
-def owner_view(sh, user_name, my_initiatives_str):
-    my_list = [x.strip() for x in str(my_initiatives_str).split(',') if x.strip()] \
-              if my_initiatives_str else []
-
-    try:
-        ws_acts  = sh.worksheet("Activities")
-        all_data = pd.DataFrame(ws_acts.get_all_records())
-        all_data['Mabadara'] = all_data['Mabadara'].astype(str).str.strip()
-        all_data['Activity'] = all_data['Activity'].astype(str).str.strip()
-        for c in ['Admin_Comment','Owner_Comment']:
-            if c not in all_data.columns: all_data[c] = ""
-        my_data = all_data[all_data['Mabadara'].isin(my_list)].copy()
-
-        ws_kpi = sh.worksheet("KPIs")
-        df_kpi = pd.DataFrame(ws_kpi.get_all_records())
-        for c in ['Admin_Comment','Owner_Comment','Owner']:
-            if c not in df_kpi.columns: df_kpi[c] = ""
-        df_kpi['Target'] = df_kpi['Target'].apply(safe_float)
-        df_kpi['Actual'] = df_kpi['Actual'].apply(safe_float)
-    except Exception as e:
-        st.error(f"خطأ في تحميل البيانات: {e}"); return
-
-    show_owner_alerts(all_data, my_list)
-
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "📋 تحديث الأنشطة",
-        "✏️ تحديث مؤشراتي",
-        "📈 اتجاه مؤشراتي",
-        "📊 كافة المؤشرات",
-        "💬 محادثاتي",
-    ])
-
-    # ── تبويب 1: الأنشطة ──
-    with tab1:
-        st.markdown("### 📌 تحديث أنشطة المبادرات")
-        if not my_list:
-            st.warning("⚠️ لا توجد مبادرات مسندة إليك.")
-        else:
-            sel_init = st.selectbox("اختر المبادرة", my_data['Mabadara'].unique())
-            with st.expander("➕ إضافة نشاط جديد"):
-                with st.form("add_act"):
-                    nn = st.text_input("اسم النشاط")
-                    c1,c2 = st.columns(2)
-                    with c1: ns = st.date_input("البداية", key="ns")
-                    with c2: ne = st.date_input("النهاية", key="ne")
-                    if st.form_submit_button("إضافة"):
-                        if nn.strip():
-                            try:
-                                ws_acts.append_row([sel_init,nn,str(ns),str(ne),0,"","",""])
-                                st.success("تمت الإضافة!"); time.sleep(1.5); st.rerun()
-                            except Exception as e: st.error(f"خطأ: {e}")
-                        else: st.error("أدخل اسم النشاط")
-
-            acts = my_data[my_data['Mabadara']==sel_init]
-            if not acts.empty:
-                sel_act = st.selectbox("النشاط", acts['Activity'].unique(), label_visibility="collapsed")
-                if sel_act:
-                    row = acts[acts['Activity']==sel_act].iloc[0]
-                    with st.expander("⚙️ إعدادات النشاط (تعديل / حذف)"):
-                        st.info("هذه الإجراءات تؤثر على هيكل النشاط.")
-                        c1,c2 = st.columns(2)
-                        with c1:
-                            st.markdown("##### ✏️ تعديل المسمى")
-                            nv = st.text_input("الاسم الجديد", value=sel_act, key="ren")
-                            if st.button("تحديث الاسم"):
-                                if nv.strip() != sel_act:
-                                    try:
-                                        cell = ws_acts.find(sel_act)
-                                        if cell: ws_acts.update_cell(cell.row, cell.col, nv); st.success("تم!"); time.sleep(1); st.rerun()
-                                    except Exception as e: st.error(f"{e}")
-                                else: st.warning("الاسم مطابق.")
-                        with c2:
-                            st.markdown("##### 🗑️ حذف النشاط")
-                            st.warning("سيتم حذف النشاط بالكامل.")
-                            if st.button("تأكيد الحذف", type="primary"):
-                                try:
-                                    cell = ws_acts.find(sel_act)
-                                    if cell: ws_acts.delete_rows(cell.row); st.success("تم الحذف."); time.sleep(1); st.rerun()
-                                except Exception as e: st.error(f"{e}")
-
-                    if str(row.get('Admin_Comment','')).strip():
-                        st.markdown(f"<div class='admin-alert-box'>📢 <strong>ملاحظة من المدير:</strong><div class='history-box'>{row['Admin_Comment']}</div></div>", unsafe_allow_html=True)
-
-                    with st.form("upd_form"):
-                        st.markdown("#### 📝 بيانات النشاط")
-                        c1,c2,c3 = st.columns(3)
-                        with c1: ns2 = st.date_input("تاريخ البداية", value=parse_date(row['Start_Date']))
-                        with c2: ne2 = st.date_input("تاريخ النهاية", value=parse_date(row['End_Date']))
-                        with c3: np2 = st.number_input("نسبة الإنجاز %", min_value=0, max_value=100, value=safe_int(row['Progress']), step=1)
-                        el = st.text_input("رابط الدليل (URL)", value=str(row['Evidence_Link']))
-                        st.markdown("📜 **سجل الملاحظات السابق:**")
-                        pn = str(row['Owner_Comment'])
-                        if pn: st.markdown(f"<div class='history-box'>{pn}</div>", unsafe_allow_html=True)
-                        else:  st.caption("لا توجد ملاحظات سابقة.")
-                        nn2 = st.text_area("✍️ إضافة ملاحظة جديدة", height=100)
-                        if st.form_submit_button("💾 حفظ التحديث"):
-                            try:
-                                sh2   = get_sheet_connection()
-                                ws2   = sh2.worksheet("Activities")
-                                df2   = pd.DataFrame(ws2.get_all_records())
-                                df2['Mabadara'] = df2['Mabadara'].astype(str).str.strip()
-                                df2['Activity'] = df2['Activity'].astype(str).str.strip()
-                                mask  = (df2['Mabadara']==sel_init)&(df2['Activity']==sel_act)
-                                if mask.any():
-                                    fc2 = append_timestamped_comment(pn, nn2)
-                                    df2.loc[mask,'Progress']      = int(np2)
-                                    df2.loc[mask,'Start_Date']    = str(ns2)
-                                    df2.loc[mask,'End_Date']      = str(ne2)
-                                    df2.loc[mask,'Evidence_Link'] = str(el)
-                                    df2.loc[mask,'Owner_Comment'] = fc2
-                                    ws2.update(values=[clean_df_for_gspread(df2).columns.tolist()]
-                                                      + clean_df_for_gspread(df2).values.tolist(), range_name='A1')
-                                    st.success("✅ تم الحفظ!"); time.sleep(1); st.rerun()
-                            except Exception as e: st.error(f"خطأ: {e}")
-
-    # ── تبويب 2: تحديث مؤشراتي ──
-    with tab2:
-        st.markdown("### 📈 تحديث مؤشرات الأداء المسندة لي")
-        cu = st.session_state['user_info'].get('username','').strip()
-        my_kpis = df_kpi[(df_kpi['Owner'].astype(str).str.strip()==cu)|
-                         (df_kpi['Owner'].astype(str).str.strip()==user_name.strip())]
-        if my_kpis.empty:
-            st.info("لا توجد مؤشرات مرتبطة بحسابك.")
-        else:
-            sk2 = st.selectbox("اختر المؤشر", my_kpis['KPI_Name'].unique())
-            if sk2:
-                kr = my_kpis[my_kpis['KPI_Name']==sk2].iloc[0]
-                m1,m2,m3 = st.columns(3)
-                m1.metric("المستهدف",kr['Target']); m2.metric("المتحقق الحالي",kr['Actual']); m3.metric("الوحدة",kr.get('Unit','-'))
-                if str(kr.get('Admin_Comment','')).strip():
-                    st.markdown(f"<div class='admin-alert-box'>📢 <strong>ملاحظات المدير:</strong><div class='history-box'>{kr['Admin_Comment']}</div></div>", unsafe_allow_html=True)
-                with st.form("upd_kpi"):
-                    na2 = st.number_input("القيمة المتحققة", value=safe_float(kr['Actual']))
-                    st.write("💬 **سجل ملاحظاتك السابق:**")
-                    pn2 = str(kr.get('Owner_Comment',''))
-                    if pn2: st.markdown(f"<div class='history-box'>{pn2}</div>", unsafe_allow_html=True)
-                    nn3 = st.text_area("أضف ملاحظة جديدة:")
-                    if st.form_submit_button("💾 حفظ تحديث المؤشر"):
-                        try:
-                            sh3   = get_sheet_connection()
-                            ws3   = sh3.worksheet("KPIs")
-                            df3   = pd.DataFrame(ws3.get_all_records())
-                            if 'Owner_Comment' not in df3.columns: df3['Owner_Comment'] = ""
-                            mask3 = df3['KPI_Name'] == sk2
-                            if mask3.any():
-                                fc3 = append_timestamped_comment(pn2, nn3)
-                                df3.loc[mask3,'Actual']        = na2
-                                df3.loc[mask3,'Owner_Comment'] = fc3
-                                ws3.update(values=[clean_df_for_gspread(df3).columns.tolist()]
-                                                  + clean_df_for_gspread(df3).values.tolist(), range_name='A1')
-                                tgt3 = safe_float(df3.loc[mask3,'Target'].values[0])
-                                save_kpi_snapshot(sk2, na2, tgt3, user_name,
-                                                  nn3[:80] if nn3 else "تحديث تلقائي")
-                                st.success("✅ تم تحديث المؤشر وحفظه في السجل التاريخي!")
-                                time.sleep(1); st.rerun()
-                        except Exception as e: st.error(f"خطأ: {e}")
-
-    # ── تبويب 3: اتجاه مؤشراتي ──
-    with tab3:
-        st.markdown("### 📈 اتجاه مؤشراتي")
-        cu3 = st.session_state['user_info'].get('username','').strip()
-        my_k3 = df_kpi[(df_kpi['Owner'].astype(str).str.strip()==cu3)|
-                       (df_kpi['Owner'].astype(str).str.strip()==user_name.strip())]
-        if my_k3.empty:
-            st.info("لا توجد مؤشرات مرتبطة بحسابك.")
-        else:
-            df_hist3 = load_kpi_history(SHEET_ID)
-            for _, kr3 in my_k3.iterrows():
-                kn3  = str(kr3['KPI_Name']).strip()
-                drx3 = str(kr3.get('Direction','تصاعدي')).strip()
-                unt3 = str(kr3.get('Unit','')).strip()
-                st.markdown(f"#### {kn3}")
-                plot_kpi_trend(df_hist3, kn3, drx3, unt3, ctx="_own3")
-                st.markdown("---")
-
-    # ── تبويب 4: كافة المؤشرات ──
-    with tab4:
-        st.markdown("### 📊 لوحة المؤشرات العامة (للاطلاع)")
-        display_kpi_layout(df_kpi, ctx="_own_tab4")
-
-    # ── تبويب 5: محادثاتي ──
-    with tab5:
-        st.markdown("### 💬 محادثاتي مع المدير")
-        if not my_list:
-            st.warning("⚠️ لا توجد مبادرات مسندة إليك.")
-        else:
-            col1, col2 = st.columns(2)
-            with col1:
-                sel_init_oc = st.selectbox("المبادرة:", my_data['Mabadara'].unique(), key="oc_init")
-            acts_oc = my_data[my_data['Mabadara'] == sel_init_oc]
-            with col2:
-                sel_act_oc = st.selectbox("النشاط:", acts_oc['Activity'].unique(), key="oc_act")
-            if sel_init_oc and sel_act_oc:
-                show_activity_chat(ws_acts, all_data, sel_init_oc, sel_act_oc, "Owner", user_name)
-
+def owner_view(user_name, my_initiatives_str):
+    my_list = [x.strip() for x in str(my_initiatives_str).split(',') if x.strip()] if my_initiatives_str else []
+    df_acts = load_activities_data()
+    df_kpi  = load_kpis_data()
+    my_data = df_acts[df_acts['Mabadara'].isin(my_list)].copy()
+    
+    st.markdown("### 📌 لوحة إنجاز الأنشطة")
+    if not my_list: st.warning("⚠️ لا توجد مبادرات مسندة إليك."); return
+    
+    sel_init = st.selectbox("اختر المبادرة", my_data['Mabadara'].unique())
+    acts = my_data[my_data['Mabadara']==sel_init]
+    
+    if not acts.empty:
+        sel_act = st.selectbox("النشاط المُراد تحديثه:", acts['Activity'].unique())
+        row = acts[acts['Activity']==sel_act].iloc[0]
+        
+        if str(row.get('Admin_Comment','')).strip():
+            st.markdown(f"<div class='admin-alert-box'>📢 <strong>توجيهات المدير:</strong><div class='history-box'>{row['Admin_Comment']}</div></div>", unsafe_allow_html=True)
+        
+        with st.form("upd_form"):
+            c1,c2,c3 = st.columns(3)
+            with c1: ns2 = st.date_input("تاريخ البداية", value=parse_date(row['Start_Date']))
+            with c2: ne2 = st.date_input("تاريخ النهاية", value=parse_date(row['End_Date']))
+            with c3: np2 = st.number_input("نسبة الإنجاز %", min_value=0, max_value=100, value=safe_int(row['Progress']))
+            
+            el = st.text_input("رابط الدليل (URL)", value=str(row['Evidence_Link']))
+            st.write("📜 **ملاحظاتك السابقة:**")
+            if str(row['Owner_Comment']): st.markdown(f"<div class='history-box'>{row['Owner_Comment']}</div>", unsafe_allow_html=True)
+            nn2 = st.text_area("✍️ أضف تحديثاً أو رداً للمدير")
+            
+            if st.form_submit_button("💾 حفظ التحديثات"):
+                df_save = load_activities_data().copy()
+                mask = (df_save['Mabadara']==sel_init) & (df_save['Activity']==sel_act)
+                df_save.loc[mask,'Progress'] = int(np2)
+                df_save.loc[mask,'Start_Date'] = str(ns2)
+                df_save.loc[mask,'End_Date'] = str(ne2)
+                df_save.loc[mask,'Evidence_Link'] = str(el)
+                if nn2.strip(): df_save.loc[mask,'Owner_Comment'] = append_timestamped_comment(row['Owner_Comment'], nn2)
+                
+                get_sheet_connection().worksheet("Activities").update(values=[clean_df_for_gspread(df_save).columns.tolist()] + clean_df_for_gspread(df_save).values.tolist(), range_name='A1')
+                load_activities_data.clear() # تفريغ الكاش
+                st.success("✅ تم تحديث النشاط بنجاح!"); time.sleep(1); st.rerun()
 
 # ---------------------------------------------------------
-# 12. واجهة المشاهد
-# ---------------------------------------------------------
-def viewer_view(sh, user_name):
-    st.markdown(f"### 👋 مرحباً، {user_name} (نسخة للاطلاع)")
-    try:
-        ws_kpi = sh.worksheet("KPIs")
-        df_kpi = pd.DataFrame(ws_kpi.get_all_records())
-        if df_kpi.empty: st.info("⚠️ لا توجد مؤشرات."); return
-        df_kpi['Target'] = df_kpi['Target'].apply(safe_float)
-        df_kpi['Actual'] = df_kpi['Actual'].apply(safe_float)
-        display_kpi_layout(df_kpi, ctx="_viewer")
-    except Exception as e: st.error(f"خطأ: {e}")
-
-
-# ---------------------------------------------------------
-# 13. التشغيل الرئيسي
+# 12. التشغيل الرئيسي
 # ---------------------------------------------------------
 if not st.session_state['logged_in']:
     login()
 else:
     with st.container():
-        ci, cs, cl, clo = st.columns([3, 4, 1, 1])
-        with ci:
-            user_name = st.session_state['user_info']['name']
-            user_role = st.session_state['user_info']['role']
-            st.markdown(f"### 👤 {user_name}")
-            st.caption(f"الدور: {user_role}")
+        ci, cl = st.columns([8, 1])
+        with ci: st.markdown(f"### 👤 {st.session_state['user_info']['name']} | <small>{st.session_state['user_info']['role']}</small>", unsafe_allow_html=True)
         with cl:
-            st.write("")
-            if st.button("تسجيل الخروج", use_container_width=True):
-                st.session_state['logged_in'] = False; st.rerun()
-        with clo:
-            if os.path.exists("logo.png"): st.image("logo.png", width=80)
-
+            if st.button("تسجيل الخروج"): st.session_state['logged_in'] = False; st.rerun()
     st.write("---")
-    try:
-        conn = get_sheet_connection()
-        role = str(st.session_state['user_info']['role']).strip().title()
-        if   role == 'Admin':  st.title("لوحة القيادة التنفيذية"); admin_view(conn, user_name)
-        elif role == 'Owner':  owner_view(conn, user_name, st.session_state['user_info']['assigned_initiative'])
-        elif role in ('Viewer','Staff'): viewer_view(conn, user_name)
-        else: st.error(f"⚠️ الدور '{role}' غير معروف.")
-    except Exception as e: st.error(f"خطأ غير متوقع: {e}")
+    
+    role = str(st.session_state['user_info']['role']).strip().title()
+    if role == 'Admin': admin_view(st.session_state['user_info']['name'])
+    elif role == 'Owner': owner_view(st.session_state['user_info']['name'], st.session_state['user_info'].get('assigned_initiative', ''))
+    else: st.info("نسخة للاطلاع فقط.")
 
-st.markdown('<div class="footer">System Version: 35.0 (NMCC - 2026)</div>', unsafe_allow_html=True)
+st.markdown('<div class="footer">System Version: 35.1 (Optimized Dashboard)</div>', unsafe_allow_html=True)
