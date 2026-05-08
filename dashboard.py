@@ -973,18 +973,11 @@ def admin_view(sh, user_name):
     if not df_acts.empty:
         today_dt = datetime.now().date()
         df_acts["_end"] = pd.to_datetime(df_acts["End_Date"], errors="coerce").dt.date
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric("📦 المبادرات",     df_acts["Mabadara"].nunique())
-        k2.metric("📝 الأنشطة",       len(df_acts))
-        avg_p = round(df_acts["Progress"].mean(), 1)
-        k3.metric("📈 متوسط الإنجاز", str(avg_p) + "%")
         delayed_n = len(df_acts[
             (df_acts["Progress"] < 100) &
             (df_acts["_end"].notna()) &
             (df_acts["_end"] < today_dt)
         ])
-        k4.metric("🚨 أنشطة متأخرة", delayed_n, delta_color="inverse")
-        st.markdown("---")
 
     show_alerts_panel(df_acts, df_kpi)
 
