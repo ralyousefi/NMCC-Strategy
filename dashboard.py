@@ -19,7 +19,6 @@ st.markdown("""
     html, body, [class*="css"] { font-family: 'Tajawal', sans-serif; direction: rtl; }
     h1,h2,h3,h4,p,div,input,select,textarea,.stSelectbox,.stNumberInput { text-align: right; }
     .stDataFrame { direction: rtl; }
-
     div[data-testid="stMetric"] {
         background-color: #ffffff; border: 1px solid #e6e6e6;
         padding: 15px; border-radius: 10px;
@@ -30,7 +29,6 @@ st.markdown("""
         font-weight: bold !important; justify-content: center;
     }
     div[data-testid="stMetricValue"] { font-size: 28px; color: #0068c9; font-weight: bold; }
-
     .history-box {
         background: #eef5ff; padding: 15px; border-radius: 8px;
         border: 1px solid #d0e2ff; margin-top: 10px; margin-bottom: 20px;
@@ -48,11 +46,8 @@ st.markdown("""
         background: #f1f1f1; color: #555; text-align: center;
         padding: 10px; font-size: 12px; border-top: 1px solid #ddd; z-index: 100;
     }
-
     /* تنبيهات */
-    .alert-summary-grid {
-        display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 20px;
-    }
+    .alert-summary-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 20px; }
     .alert-summary-card { border-radius: 10px; padding: 16px; text-align: center; }
     .alert-summary-card .num { font-size: 32px; font-weight: 900; line-height: 1; }
     .alert-summary-card .lbl { font-size: 13px; margin-top: 4px; opacity: .85; }
@@ -60,29 +55,32 @@ st.markdown("""
     .s-orange { background: #fef3cd; color: #d35400; }
     .s-blue   { background: #e8f4fd; color: #1a5276; }
     .s-gray   { background: #f3f3f3; color: #2c3e50; }
-    .alert-header {
-        display: flex; align-items: center; gap: 10px; padding: 14px 18px;
-        border-radius: 10px; margin-bottom: 8px; font-weight: bold; direction: rtl;
-    }
+    .alert-header { display: flex; align-items: center; gap: 10px; padding: 14px 18px;
+        border-radius: 10px; margin-bottom: 8px; font-weight: bold; direction: rtl; }
     .alert-overdue { background: #fde8e8; border-right: 5px solid #c0392b; color: #7b241c; }
     .alert-at-risk { background: #fef3cd; border-right: 5px solid #e67e22; color: #784212; }
-    .all-good {
-        background: #eafaf1; border-right: 5px solid #27ae60; border-radius: 8px;
-        padding: 12px 18px; color: #1e8449; font-weight: bold; margin-bottom: 10px; direction: rtl;
-    }
-
+    .all-good { background: #eafaf1; border-right: 5px solid #27ae60; border-radius: 8px;
+        padding: 12px 18px; color: #1e8449; font-weight: bold; margin-bottom: 10px; direction: rtl; }
     /* تتبع تاريخي */
-    .trend-card {
-        background: #fff; border: 1px solid #e0e0e0; border-radius: 10px;
-        padding: 14px 18px; margin-bottom: 12px;
-    }
+    .trend-card { background: #fff; border: 1px solid #e0e0e0; border-radius: 10px;
+        padding: 14px 18px; margin-bottom: 12px; }
     .trend-up   { color: #27ae60; font-weight: bold; font-size: 15px; }
     .trend-down { color: #e74c3c; font-weight: bold; font-size: 15px; }
     .trend-flat { color: #f39c12; font-weight: bold; font-size: 15px; }
-    .snapshot-info {
-        background: #f0f4ff; border-radius: 8px; padding: 10px 16px;
-        border-right: 4px solid #3498db; margin-bottom: 12px; font-size: 14px;
-    }
+    .snapshot-info { background: #f0f4ff; border-radius: 8px; padding: 10px 16px;
+        border-right: 4px solid #3498db; margin-bottom: 12px; font-size: 14px; }
+    /* محادثة */
+    .chat-wrap { display: flex; flex-direction: column; gap: 10px; padding: 12px 4px; direction: rtl; }
+    .bubble { max-width: 78%; padding: 10px 14px; border-radius: 16px; font-size: 13.5px;
+        line-height: 1.6; position: relative; word-break: break-word; font-family: 'Tajawal', sans-serif; }
+    .bubble-admin { background: #1a237e; color: #fff; align-self: flex-end;
+        border-bottom-right-radius: 4px; margin-left: auto; }
+    .bubble-admin .meta { font-size: 11px; opacity: .7; margin-bottom: 4px; text-align: right; }
+    .bubble-owner { background: #f0f4ff; color: #1a237e; border: 1px solid #dce4ff;
+        align-self: flex-start; border-bottom-left-radius: 4px; margin-right: auto; }
+    .bubble-owner .meta { font-size: 11px; color: #5c6bc0; margin-bottom: 4px; text-align: right; }
+    .chat-empty { text-align: center; color: #aaa; font-size: 13px; padding: 24px 0; direction: rtl; }
+    .chat-divider { text-align: center; color: #bbb; font-size: 11px; padding: 4px 0; direction: rtl; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -105,6 +103,312 @@ KPI_GROUPS = {
         "نسبة الإجراءات المؤتمتة", "مستوى رضا المستفيدين", "التحول الرقمي DGA",
         "نسبة الدوران الوظيفي", "نسبة الإيرادات الى إجمالي ميزانية",
         "نسبة النمو في إيرادات",
+    ],
+}
+
+def get_kpi_category(kpi_name):
+    kpi_name = str(kpi_name).strip()
+    for group, items in KPI_GROUPS.items():
+        if kpi_name in [str(i).strip() for i in items]:
+            return group
+    return "مؤشرات أخرى"
+
+# ---------------------------------------------------------
+# 3. اتصال Google Sheets
+# ---------------------------------------------------------
+SHEET_ID          = "11tKfYa-Sqa96wDwQvMvChgRWaxgMRAWAIvul7p27ayY"
+KPI_HISTORY_SHEET = "KPI_History"
+
+def get_creds():
+    scope = ["https://spreadsheets.google.com/feeds",
+             "https://www.googleapis.com/auth/drive"]
+    try:
+        if st.secrets is not None and 'gcp_service_account' in st.secrets:
+            creds_dict = dict(st.secrets["gcp_service_account"])
+            if 'private_key' in creds_dict:
+                creds_dict['private_key'] = creds_dict['private_key'].replace('\\n', '\n')
+            return ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    except Exception:
+        pass
+    if os.path.exists("credentials.json"):
+        return ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+    st.error("⚠️ خطأ في الاتصال: لم يتم العثور على ملف الاعتمادات أو Secrets.")
+    st.stop()
+
+def get_sheet_connection():
+    creds  = get_creds()
+    client = gspread.authorize(creds)
+    return client.open_by_key(SHEET_ID)
+
+# ---------------------------------------------------------
+# 4. دوال مساعدة
+# ---------------------------------------------------------
+def safe_int(val):
+    try:
+        if str(val).strip() == '': return 0
+        return int(float(str(val).replace('%', '').strip()))
+    except: return 0
+
+def safe_float(val):
+    try:
+        if str(val).strip() == '': return 0.0
+        return float(str(val).replace('%', '').strip())
+    except: return 0.0
+
+def clean_df_for_gspread(df):
+    df_clean = df.fillna("")
+    return df_clean.astype(object).where(pd.notnull(df_clean), "")
+
+def parse_date(date_str):
+    try: return pd.to_datetime(date_str).date()
+    except: return datetime.today().date()
+
+def append_timestamped_comment(original_text, new_comment):
+    if not new_comment or str(new_comment).strip() == "":
+        return original_text
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    new_entry = f"📅 {timestamp}: {str(new_comment).strip()}"
+    if original_text and str(original_text).strip() != "":
+        return f"{str(original_text)}\n----------------\n{new_entry}"
+    return new_entry
+
+def _last_update_date(comment_text: str):
+    if not comment_text or str(comment_text).strip() == "": return None
+    dates = re.findall(r"(\d{4}-\d{2}-\d{2})", str(comment_text))
+    if not dates: return None
+    try: return datetime.strptime(dates[-1], "%Y-%m-%d").date()
+    except: return None
+
+def _parse_end_date(val):
+    try: return pd.to_datetime(str(val)).date()
+    except: return None
+
+# ---------------------------------------------------------
+# 5. نظام المحادثة
+# ---------------------------------------------------------
+_MSG_PATTERN = re.compile(
+    r"📅\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})(?:\s*\[(\w+)\])?:\s*(.*?)(?=📅|\Z)",
+    re.DOTALL,
+)
+
+def _parse_messages(text: str, default_role: str) -> list:
+    if not text or str(text).strip() == "": return []
+    msgs = []
+    for m in _MSG_PATTERN.finditer(str(text)):
+        dt_str = m.group(1).strip()
+        role   = (m.group(2) or default_role).strip()
+        body   = m.group(3).strip().replace("----------------", "").strip()
+        if not body: continue
+        try: dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
+        except: dt = datetime.min
+        msgs.append({"dt": dt, "role": role, "text": body})
+    return msgs
+
+def _merge_and_sort(owner_text: str, admin_text: str) -> list:
+    msgs = (_parse_messages(owner_text, "Owner") +
+            _parse_messages(admin_text,  "Admin"))
+    return sorted(msgs, key=lambda x: x["dt"])
+
+def _format_new_comment(text: str, role: str) -> str:
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+    return f"📅 {ts} [{role}]: {text.strip()}"
+
+def _append_comment(original: str, new_entry: str) -> str:
+    original = str(original).strip()
+    return f"{original}\n{new_entry}" if original else new_entry
+
+def _render_chat(messages: list, current_role: str):
+    if not messages:
+        st.markdown("<div class='chat-empty'>💬 لا توجد رسائل بعد — ابدأ المحادثة أدناه</div>",
+                    unsafe_allow_html=True)
+        return
+    html = "<div class='chat-wrap'>"
+    prev_date = None
+    for msg in messages:
+        msg_date = msg["dt"].strftime("%Y-%m-%d")
+        if msg_date != prev_date:
+            label = msg["dt"].strftime("%A، %Y-%m-%d")
+            html += f"<div class='chat-divider'>── {label} ──</div>"
+            prev_date = msg_date
+        is_admin = (msg["role"] == "Admin")
+        cls      = "bubble-admin" if is_admin else "bubble-owner"
+        sender   = "المدير" if is_admin else "الموظف"
+        time_s   = msg["dt"].strftime("%H:%M")
+        text_esc = msg["text"].replace("<","&lt;").replace(">","&gt;").replace("\n","<br>")
+        justify  = "flex-end" if is_admin else "flex-start"
+        html += f"""<div style='display:flex;justify-content:{justify}'>
+          <div class='bubble {cls}'>
+            <div class='meta'>{sender} · {time_s}</div>{text_esc}
+          </div></div>"""
+    html += "</div>"
+    st.markdown(html, unsafe_allow_html=True)
+
+def show_activity_chat(ws, df_acts, mabadara, activity, current_role, current_user):
+    mask = ((df_acts["Mabadara"].astype(str).str.strip() == mabadara.strip()) &
+            (df_acts["Activity"].astype(str).str.strip()  == activity.strip()))
+    if not mask.any(): st.warning("لم يُعثر على النشاط."); return
+    row        = df_acts[mask].iloc[0]
+    messages   = _merge_and_sort(str(row.get("Owner_Comment","")),
+                                  str(row.get("Admin_Comment","")))
+    short_act  = activity[:55] + "…" if len(activity) > 55 else activity
+    st.markdown(f"#### 💬 محادثة: {short_act}")
+    st.caption(f"المبادرة: {mabadara[:60]}")
+    c1,c2,c3 = st.columns(3)
+    c1.metric("📨 إجمالي الرسائل", len(messages))
+    c2.metric("🔵 رسائل المدير",   sum(1 for m in messages if m["role"]=="Admin"))
+    c3.metric("🟢 رسائل الموظف",   sum(1 for m in messages if m["role"]=="Owner"))
+    st.markdown("---")
+    chat_h = min(max(len(messages)*80, 200), 500)
+    with st.container(height=chat_h):
+        _render_chat(messages, current_role)
+    st.markdown("---")
+    sender_label = "المدير" if current_role == "Admin" else "الموظف"
+    new_msg = st.text_area(f"✍️ رسالة جديدة ({sender_label})",
+                           placeholder="اكتب ردك هنا...", height=90,
+                           key=f"chat_in_{mabadara[:15]}_{activity[:15]}")
+    col_s, col_t = st.columns([2,1])
+    with col_s:
+        if st.button("📤 إرسال", type="primary", use_container_width=True,
+                     key=f"chat_send_{mabadara[:12]}_{activity[:12]}"):
+            if not new_msg.strip(): st.warning("الرسالة فارغة.")
+            else:
+                entry = _format_new_comment(new_msg, current_role)
+                col_name = "Admin_Comment" if current_role == "Admin" else "Owner_Comment"
+                if col_name not in df_acts.columns: df_acts[col_name] = ""
+                old = str(df_acts.loc[mask, col_name].values[0]).strip()
+                df_acts.loc[mask, col_name] = _append_comment(old, entry)
+                try:
+                    df_c = clean_df_for_gspread(df_acts)
+                    ws.update(values=[df_c.columns.tolist()] + df_c.values.tolist(), range_name="A1")
+                    st.success("✅ تم الإرسال!"); time.sleep(0.8); st.rerun()
+                except Exception as e: st.error(f"خطأ: {e}")
+    with col_t:
+        st.caption(f"الوقت: {datetime.now().strftime('%H:%M')}")
+
+def show_kpi_chat(ws_kpi, df_kpi, kpi_name, current_role, current_user):
+    mask = df_kpi["KPI_Name"].astype(str).str.strip() == kpi_name.strip()
+    if not mask.any(): st.warning("لم يُعثر على المؤشر."); return
+    row      = df_kpi[mask].iloc[0]
+    messages = _merge_and_sort(str(row.get("Owner_Comment","")),
+                                str(row.get("Admin_Comment","")))
+    short_k  = kpi_name[:55] + "…" if len(kpi_name) > 55 else kpi_name
+    st.markdown(f"#### 💬 محادثة المؤشر: {short_k}")
+    c1,c2,c3 = st.columns(3)
+    c1.metric("📨 إجمالي", len(messages))
+    c2.metric("🔵 المدير",  sum(1 for m in messages if m["role"]=="Admin"))
+    c3.metric("🟢 الموظف",  sum(1 for m in messages if m["role"]=="Owner"))
+    st.markdown("---")
+    chat_h = min(max(len(messages)*80, 200), 500)
+    with st.container(height=chat_h):
+        _render_chat(messages, current_role)
+    st.markdown("---")
+    sender_label = "المدير" if current_role == "Admin" else "الموظف"
+    new_msg = st.text_area(f"✍️ رسالة جديدة ({sender_label})",
+                           placeholder="اكتب ردك هنا...", height=90,
+                           key=f"kpi_chat_in_{kpi_name[:30]}")
+    if st.button("📤 إرسال", type="primary", use_container_width=True,
+                 key=f"kpi_chat_send_{kpi_name[:25]}"):
+        if not new_msg.strip(): st.warning("الرسالة فارغة.")
+        else:
+            entry    = _format_new_comment(new_msg, current_role)
+            col_name = "Admin_Comment" if current_role == "Admin" else "Owner_Comment"
+            if col_name not in df_kpi.columns: df_kpi[col_name] = ""
+            old = str(df_kpi.loc[mask, col_name].values[0]).strip()
+            df_kpi.loc[mask, col_name] = _append_comment(old, entry)
+            try:
+                df_c = clean_df_for_gspread(df_kpi)
+                ws_kpi.update(values=[df_c.columns.tolist()] + df_c.values.tolist(), range_name="A1")
+                st.success("✅ تم الإرسال!"); time.sleep(0.8); st.rerun()
+            except Exception as e: st.error(f"خطأ: {e}")
+
+# ---------------------------------------------------------
+# 6. نظام التتبع التاريخي
+# ---------------------------------------------------------
+@st.cache_data(ttl=120, show_spinner=False)
+def load_kpi_history(_cache_key: str) -> pd.DataFrame:
+    COLS  = ["KPI_Name","Date","Actual","Target","Recorded_By","Note"]
+    empty = pd.DataFrame(columns=COLS)
+    try:
+        sh = get_sheet_connection()
+        try: ws = sh.worksheet(KPI_HISTORY_SHEET)
+        except gspread.exceptions.WorksheetNotFound:
+            ws = sh.add_worksheet(title=KPI_HISTORY_SHEET, rows=2000, cols=6)
+            ws.append_row(COLS); return empty
+        records = ws.get_all_records()
+        if not records: return empty
+        df = pd.DataFrame(records)
+        df["Date"]   = pd.to_datetime(df["Date"], errors="coerce")
+        df["Actual"] = df["Actual"].apply(safe_float)
+        df["Target"] = df["Target"].apply(safe_float)
+        return df.dropna(subset=["Date"])
+    except Exception as e:
+        st.warning(f"تحذير: تعذّر تحميل السجل التاريخي — {e}"); return empty
+
+def _get_or_create_history_ws(sh):
+    try: return sh.worksheet(KPI_HISTORY_SHEET)
+    except gspread.exceptions.WorksheetNotFound:
+        ws = sh.add_worksheet(title=KPI_HISTORY_SHEET, rows=2000, cols=6)
+        ws.append_row(["KPI_Name","Date","Actual","Target","Recorded_By","Note"]); return ws
+
+def save_kpi_snapshot(kpi_name, actual, target, recorded_by, note="") -> bool:
+    today_str = date.today().isoformat()
+    try:
+        sh  = get_sheet_connection()
+        ws  = _get_or_create_history_ws(sh)
+        recs = ws.get_all_records()
+        for i, r in enumerate(recs):
+            if (str(r.get("KPI_Name","")).strip() == kpi_name.strip()
+                    and str(r.get("Date","")).strip() == today_str):
+                ws.update(f"A{i+2}:F{i+2}",
+                          [[kpi_name,today_str,actual,target,recorded_by,note]])
+                load_kpi_history.clear(); return True
+        ws.append_row([kpi_name,today_str,actual,target,recorded_by,note])
+        load_kpi_history.clear(); return True
+    except Exception as e:
+        st.error(f"خطأ في حفظ السجل التاريخي: {e}"); return False
+
+def save_all_kpis_snapshot(df_kpi, recorded_by) -> int:
+    today_str = date.today().isoformat()
+    try:
+        sh  = get_sheet_connection()
+        ws  = _get_or_create_history_ws(sh)
+        existing  = ws.get_all_records()
+        exist_map = {(str(r["KPI_Name"]).strip(), str(r["Date"]).strip()): i+2
+                     for i, r in enumerate(existing)}
+        new_rows, update_ops = [], []
+        for _, row in df_kpi.iterrows():
+            kpi    = str(row.get("KPI_Name","")).strip()
+            actual = safe_float(row.get("Actual",0))
+            target = safe_float(row.get("Target",0))
+            key    = (kpi, today_str)
+            if key in exist_map:
+                update_ops.append((exist_map[key],[kpi,today_str,actual,target,recorded_by,"لقطة شاملة"]))
+            else:
+                new_rows.append([kpi,today_str,actual,target,recorded_by,"لقطة شاملة"])
+        for row_idx, data in update_ops:
+            ws.update(f"A{row_idx}:F{row_idx}", [data])
+        if new_rows:
+            ws.append_rows(new_rows, value_input_option="USER_ENTERED")
+        load_kpi_history.clear()
+        return len(new_rows) + len(update_ops)
+    except Exception as e:
+        st.error(f"خطأ في اللقطة الشاملة: {e}"); return 0
+
+def compute_trend(series: pd.Series) -> dict:
+    vals = series.dropna().tolist()
+    if len(vals) < 2:
+        return {"direction":"flat","pct":0.0,"label":"لا يوجد سجل كافٍ","css":"trend-flat","icon":"➖"}
+    last, prev = vals[-1], vals[-2]
+    pct = ((last-prev)/abs(prev)*100) if prev != 0 else (100.0 if last > 0 else 0.0)
+    if   pct >  2: return {"direction":"up",  "pct":pct, "label":f"▲ {pct:.1f}%",      "css":"trend-up",   "icon":"▲"}
+    elif pct < -2: return {"direction":"down", "pct":pct, "label":f"▼ {abs(pct):.1f}%", "css":"trend-down", "icon":"▼"}
+    else:          return {"direction":"flat", "pct":pct, "label":"مستقر ➖",             "css":"trend-flat", "icon":"➖"}
+
+def plot_kpi_trend(df_history, kpi_name, direction="تصاعدي", unit="", ctx=""):
+    df = df_history[df_history["KPI_Name"].astype(str).str.strip()==kpi_name.strip()
+                    ].copy().sort_values("Date")
+    if df.empty:
+        st.info("لا توجد بيانات تاريخية بعد — سجّل أول قيمة باستخدام زر التحديث أو اللقطة الشا        "نسبة النمو في إيرادات",
     ],
 }
 
@@ -1025,130 +1329,414 @@ def owner_view(sh, user_name, my_initiatives_str):
                                 sh2   = get_sheet_connection()
                                 ws2   = sh2.worksheet("Activities")
                                 df2   = pd.DataFrame(ws2.get_all_records())
-                                df2['Mabadara'] = df2['Mabadara'].astype(str).str.strip()
-                                df2['Activity'] = df2['Activity'].astype(str).str.strip()
-                                mask  = (df2['Mabadara']==sel_init)&(df2['Activity']==sel_act)
-                                if mask.any():
-                                    fc2 = append_timestamped_comment(pn, nn2)
-                                    df2.loc[mask,'Progress']      = int(np2)
-                                    df2.loc[mask,'Start_Date']    = str(ns2)
-                                    df2.loc[mask,'End_Date']      = str(ne2)
-                                    df2.loc[mask,'Evidence_Link'] = str(el)
-                                    df2.loc[mask,'Owner_Comment'] = fc2
-                                    ws2.update(values=[clean_df_for_gspread(df2).columns.tolist()]
-                                                      + clean_df_for_gspread(df2).values.tolist(), range_name='A1')
-                                    st.success("✅ تم الحفظ!"); time.sleep(1); st.rerun()
-                            except Exception as e: st.error(f"خطأ: {e}")
-
-    # ── تبويب 2: تحديث مؤشراتي ──
-    with tab2:
-        st.markdown("### 📈 تحديث مؤشرات الأداء المسندة لي")
-        cu = st.session_state['user_info'].get('username','').strip()
-        my_kpis = df_kpi[(df_kpi['Owner'].astype(str).str.strip()==cu)|
-                         (df_kpi['Owner'].astype(str).str.strip()==user_name.strip())]
-        if my_kpis.empty:
-            st.info("لا توجد مؤشرات مرتبطة بحسابك.")
-        else:
-            sk2 = st.selectbox("اختر المؤشر", my_kpis['KPI_Name'].unique())
-            if sk2:
-                kr = my_kpis[my_kpis['KPI_Name']==sk2].iloc[0]
-                m1,m2,m3 = st.columns(3)
-                m1.metric("المستهدف",kr['Target']); m2.metric("المتحقق الحالي",kr['Actual']); m3.metric("الوحدة",kr.get('Unit','-'))
-                if str(kr.get('Admin_Comment','')).strip():
-                    st.markdown(f"<div class='admin-alert-box'>📢 <strong>ملاحظات المدير:</strong><div class='history-box'>{kr['Admin_Comment']}</div></div>", unsafe_allow_html=True)
-                with st.form("upd_kpi"):
-                    na2 = st.number_input("القيمة المتحققة", value=safe_float(kr['Actual']))
-                    st.write("💬 **سجل ملاحظاتك السابق:**")
-                    pn2 = str(kr.get('Owner_Comment',''))
-                    if pn2: st.markdown(f"<div class='history-box'>{pn2}</div>", unsafe_allow_html=True)
-                    nn3 = st.text_area("أضف ملاحظة جديدة:")
-                    if st.form_submit_button("💾 حفظ تحديث المؤشر"):
-                        try:
-                            sh3   = get_sheet_connection()
-                            ws3   = sh3.worksheet("KPIs")
-                            df3   = pd.DataFrame(ws3.get_all_records())
-                            if 'Owner_Comment' not in df3.columns: df3['Owner_Comment'] = ""
-                            mask3 = df3['KPI_Name'] == sk2
-                            if mask3.any():
-                                fc3 = append_timestamped_comment(pn2, nn3)
-                                df3.loc[mask3,'Actual']        = na2
-                                df3.loc[mask3,'Owner_Comment'] = fc3
-                                ws3.update(values=[clean_df_for_gspread(df3).columns.tolist()]
-                                                  + clean_df_for_gspread(df3).values.tolist(), range_name='A1')
-                                tgt3 = safe_float(df3.loc[mask3,'Target'].values[0])
-                                save_kpi_snapshot(sk2, na2, tgt3, user_name,
-                                                  nn3[:80] if nn3 else "تحديث تلقائي")
-                                st.success("✅ تم تحديث المؤشر وحفظه في السجل التاريخي!")
-                                time.sleep(1); st.rerun()
-                        except Exception as e: st.error(f"خطأ: {e}")
-
-    # ── تبويب 3: اتجاه مؤشراتي ──
-    with tab3:
-        st.markdown("### 📈 اتجاه مؤشراتي")
-        cu3 = st.session_state['user_info'].get('username','').strip()
-        my_k3 = df_kpi[(df_kpi['Owner'].astype(str).str.strip()==cu3)|
-                       (df_kpi['Owner'].astype(str).str.strip()==user_name.strip())]
-        if my_k3.empty:
-            st.info("لا توجد مؤشرات مرتبطة بحسابك.")
-        else:
-            df_hist3 = load_kpi_history(SHEET_ID)
-            for _, kr3 in my_k3.iterrows():
-                kn3  = str(kr3['KPI_Name']).strip()
-                drx3 = str(kr3.get('Direction','تصاعدي')).strip()
-                unt3 = str(kr3.get('Unit','')).strip()
-                st.markdown(f"#### {kn3}")
-                plot_kpi_trend(df_hist3, kn3, drx3, unt3, ctx="_own3")
-                st.markdown("---")
-
-    # ── تبويب 4: كافة المؤشرات ──
-    with tab4:
-        st.markdown("### 📊 لوحة المؤشرات العامة (للاطلاع)")
-        display_kpi_layout(df_kpi, ctx="_own_tab4")
-
+import streamlit as st
+import pandas as pd
+import plotly.graph_objects as go
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+import os
+import re
+import time
+from datetime import datetime, date
 
 # ---------------------------------------------------------
-# 12. واجهة المشاهد
+# 1. إعدادات الصفحة
 # ---------------------------------------------------------
-def viewer_view(sh, user_name):
-    st.markdown(f"### 👋 مرحباً، {user_name} (نسخة للاطلاع)")
+st.set_page_config(page_title="نظام إدارة الاستراتيجية", layout="wide", page_icon="📊")
+
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap');
+    html, body, [class*="css"] { font-family: 'Tajawal', sans-serif; direction: rtl; }
+    h1,h2,h3,h4,p,div,input,select,textarea,.stSelectbox,.stNumberInput { text-align: right; }
+    .stDataFrame { direction: rtl; }
+    div[data-testid="stMetric"] {
+        background-color: #ffffff; border: 1px solid #e6e6e6;
+        padding: 15px; border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0,0,0,.05); text-align: center;
+    }
+    div[data-testid="stMetricLabel"] {
+        font-size: 20px !important; color: #0068c9 !important;
+        font-weight: bold !important; justify-content: center;
+    }
+    div[data-testid="stMetricValue"] { font-size: 28px; color: #0068c9; font-weight: bold; }
+    .history-box {
+        background: #eef5ff; padding: 15px; border-radius: 8px;
+        border: 1px solid #d0e2ff; margin-top: 10px; margin-bottom: 20px;
+        font-size: 15px; line-height: 1.6; white-space: pre-wrap;
+        box-shadow: inset 0 0 5px rgba(0,0,0,.05);
+    }
+    .history-title { color: #0068c9; font-weight: bold; margin-bottom: 5px; font-size: 16px; }
+    .admin-alert-box {
+        background: #fff3cd; color: #856404; padding: 15px; border-radius: 8px;
+        border: 1px solid #ffeeba; border-right: 5px solid #ffc107;
+        margin-bottom: 20px; font-weight: bold;
+    }
+    .footer {
+        position: fixed; left: 0; bottom: 0; width: 100%;
+        background: #f1f1f1; color: #555; text-align: center;
+        padding: 10px; font-size: 12px; border-top: 1px solid #ddd; z-index: 100;
+    }
+    /* تنبيهات */
+    .alert-summary-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 20px; }
+    .alert-summary-card { border-radius: 10px; padding: 16px; text-align: center; }
+    .alert-summary-card .num { font-size: 32px; font-weight: 900; line-height: 1; }
+    .alert-summary-card .lbl { font-size: 13px; margin-top: 4px; opacity: .85; }
+    .s-red    { background: #fde8e8; color: #c0392b; }
+    .s-orange { background: #fef3cd; color: #d35400; }
+    .s-blue   { background: #e8f4fd; color: #1a5276; }
+    .s-gray   { background: #f3f3f3; color: #2c3e50; }
+    .alert-header { display: flex; align-items: center; gap: 10px; padding: 14px 18px;
+        border-radius: 10px; margin-bottom: 8px; font-weight: bold; direction: rtl; }
+    .alert-overdue { background: #fde8e8; border-right: 5px solid #c0392b; color: #7b241c; }
+    .alert-at-risk { background: #fef3cd; border-right: 5px solid #e67e22; color: #784212; }
+    .all-good { background: #eafaf1; border-right: 5px solid #27ae60; border-radius: 8px;
+        padding: 12px 18px; color: #1e8449; font-weight: bold; margin-bottom: 10px; direction: rtl; }
+    /* تتبع تاريخي */
+    .trend-card { background: #fff; border: 1px solid #e0e0e0; border-radius: 10px;
+        padding: 14px 18px; margin-bottom: 12px; }
+    .trend-up   { color: #27ae60; font-weight: bold; font-size: 15px; }
+    .trend-down { color: #e74c3c; font-weight: bold; font-size: 15px; }
+    .trend-flat { color: #f39c12; font-weight: bold; font-size: 15px; }
+    .snapshot-info { background: #f0f4ff; border-radius: 8px; padding: 10px 16px;
+        border-right: 4px solid #3498db; margin-bottom: 12px; font-size: 14px; }
+    /* محادثة */
+    .chat-wrap { display: flex; flex-direction: column; gap: 10px; padding: 12px 4px; direction: rtl; }
+    .bubble { max-width: 78%; padding: 10px 14px; border-radius: 16px; font-size: 13.5px;
+        line-height: 1.6; position: relative; word-break: break-word; font-family: 'Tajawal', sans-serif; }
+    .bubble-admin { background: #1a237e; color: #fff; align-self: flex-end;
+        border-bottom-right-radius: 4px; margin-left: auto; }
+    .bubble-admin .meta { font-size: 11px; opacity: .7; margin-bottom: 4px; text-align: right; }
+    .bubble-owner { background: #f0f4ff; color: #1a237e; border: 1px solid #dce4ff;
+        align-self: flex-start; border-bottom-left-radius: 4px; margin-right: auto; }
+    .bubble-owner .meta { font-size: 11px; color: #5c6bc0; margin-bottom: 4px; text-align: right; }
+    .chat-empty { text-align: center; color: #aaa; font-size: 13px; padding: 24px 0; direction: rtl; }
+    .chat-divider { text-align: center; color: #bbb; font-size: 11px; padding: 4px 0; direction: rtl; }
+</style>
+""", unsafe_allow_html=True)
+
+# ---------------------------------------------------------
+# 2. تعريف المجموعات
+# ---------------------------------------------------------
+KPI_GROUPS = {
+    "QI4SD": [
+        "QI4SD - Metrology", "CMC", "B of CMC", "ILC", "CC",
+        "OIML project groups", "OIML-CS - number of services offered",
+    ],
+    "البحث والتطوير": [
+        "عدد الابحاث العلمية المنشورة في مجلات مصنفة دولياً Q1, Q2",
+        "عدد المشاركات العلمية الدولية", "عدد الطلاب الملتحقين",
+        "عدد فعاليات الاستقطاب الجامعي", "عدد المشاريع الوطنية",
+        "عدد المشاركين سنوياً في برامج التبادل الفني",
+    ],
+    "الكفاءة التشغيلية": [
+        "نسبة نضج الحوكمة المؤسسية KAQA", "مؤشر التميز المؤسسي",
+        "نسبة الإجراءات المؤتمتة", "مستوى رضا المستفيدين", "التحول الرقمي DGA",
+        "نسبة الدوران الوظيفي", "نسبة الإيرادات الى إجمالي ميزانية",
+        "نسبة النمو في إيرادات",
+    ],
+}
+
+def get_kpi_category(kpi_name):
+    kpi_name = str(kpi_name).strip()
+    for group, items in KPI_GROUPS.items():
+        if kpi_name in [str(i).strip() for i in items]:
+            return group
+    return "مؤشرات أخرى"
+
+# ---------------------------------------------------------
+# 3. اتصال Google Sheets
+# ---------------------------------------------------------
+SHEET_ID          = "11tKfYa-Sqa96wDwQvMvChgRWaxgMRAWAIvul7p27ayY"
+KPI_HISTORY_SHEET = "KPI_History"
+
+def get_creds():
+    scope = ["https://spreadsheets.google.com/feeds",
+             "https://www.googleapis.com/auth/drive"]
     try:
-        ws_kpi = sh.worksheet("KPIs")
-        df_kpi = pd.DataFrame(ws_kpi.get_all_records())
-        if df_kpi.empty: st.info("⚠️ لا توجد مؤشرات."); return
-        df_kpi['Target'] = df_kpi['Target'].apply(safe_float)
-        df_kpi['Actual'] = df_kpi['Actual'].apply(safe_float)
-        display_kpi_layout(df_kpi, ctx="_viewer")
-    except Exception as e: st.error(f"خطأ: {e}")
+        if st.secrets is not None and 'gcp_service_account' in st.secrets:
+            creds_dict = dict(st.secrets["gcp_service_account"])
+            if 'private_key' in creds_dict:
+                creds_dict['private_key'] = creds_dict['private_key'].replace('\\n', '\n')
+            return ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    except Exception:
+        pass
+    if os.path.exists("credentials.json"):
+        return ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+    st.error("⚠️ خطأ في الاتصال: لم يتم العثور على ملف الاعتمادات أو Secrets.")
+    st.stop()
 
+def get_sheet_connection():
+    creds  = get_creds()
+    client = gspread.authorize(creds)
+    return client.open_by_key(SHEET_ID)
 
 # ---------------------------------------------------------
-# 13. التشغيل الرئيسي
+# 4. دوال مساعدة
 # ---------------------------------------------------------
-if not st.session_state['logged_in']:
-    login()
-else:
-    with st.container():
-        ci, cs, cl, clo = st.columns([3, 4, 1, 1])
-        with ci:
-            user_name = st.session_state['user_info']['name']
-            user_role = st.session_state['user_info']['role']
-            st.markdown(f"### 👤 {user_name}")
-            st.caption(f"الدور: {user_role}")
-        with cl:
-            st.write("")
-            if st.button("تسجيل الخروج", use_container_width=True):
-                st.session_state['logged_in'] = False; st.rerun()
-        with clo:
-            if os.path.exists("logo.png"): st.image("logo.png", width=80)
-
-    st.write("---")
+def safe_int(val):
     try:
-        conn = get_sheet_connection()
-        role = str(st.session_state['user_info']['role']).strip().title()
-        if   role == 'Admin':  st.title("لوحة القيادة التنفيذية"); admin_view(conn, user_name)
-        elif role == 'Owner':  owner_view(conn, user_name, st.session_state['user_info']['assigned_initiative'])
-        elif role in ('Viewer','Staff'): viewer_view(conn, user_name)
-        else: st.error(f"⚠️ الدور '{role}' غير معروف.")
-    except Exception as e: st.error(f"خطأ غير متوقع: {e}")
+        if str(val).strip() == '': return 0
+        return int(float(str(val).replace('%', '').strip()))
+    except: return 0
 
-st.markdown('<div class="footer">System Version: 34.0 (NMCC - 2026)</div>', unsafe_allow_html=True)
+def safe_float(val):
+    try:
+        if str(val).strip() == '': return 0.0
+        return float(str(val).replace('%', '').strip())
+    except: return 0.0
+
+def clean_df_for_gspread(df):
+    df_clean = df.fillna("")
+    return df_clean.astype(object).where(pd.notnull(df_clean), "")
+
+def parse_date(date_str):
+    try: return pd.to_datetime(date_str).date()
+    except: return datetime.today().date()
+
+def append_timestamped_comment(original_text, new_comment):
+    if not new_comment or str(new_comment).strip() == "":
+        return original_text
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    new_entry = f"📅 {timestamp}: {str(new_comment).strip()}"
+    if original_text and str(original_text).strip() != "":
+        return f"{str(original_text)}\n----------------\n{new_entry}"
+    return new_entry
+
+def _last_update_date(comment_text: str):
+    if not comment_text or str(comment_text).strip() == "": return None
+    dates = re.findall(r"(\d{4}-\d{2}-\d{2})", str(comment_text))
+    if not dates: return None
+    try: return datetime.strptime(dates[-1], "%Y-%m-%d").date()
+    except: return None
+
+def _parse_end_date(val):
+    try: return pd.to_datetime(str(val)).date()
+    except: return None
+
+# ---------------------------------------------------------
+# 5. نظام المحادثة
+# ---------------------------------------------------------
+_MSG_PATTERN = re.compile(
+    r"📅\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})(?:\s*\[(\w+)\])?:\s*(.*?)(?=📅|\Z)",
+    re.DOTALL,
+)
+
+def _parse_messages(text: str, default_role: str) -> list:
+    if not text or str(text).strip() == "": return []
+    msgs = []
+    for m in _MSG_PATTERN.finditer(str(text)):
+        dt_str = m.group(1).strip()
+        role   = (m.group(2) or default_role).strip()
+        body   = m.group(3).strip().replace("----------------", "").strip()
+        if not body: continue
+        try: dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
+        except: dt = datetime.min
+        msgs.append({"dt": dt, "role": role, "text": body})
+    return msgs
+
+def _merge_and_sort(owner_text: str, admin_text: str) -> list:
+    msgs = (_parse_messages(owner_text, "Owner") +
+            _parse_messages(admin_text,  "Admin"))
+    return sorted(msgs, key=lambda x: x["dt"])
+
+def _format_new_comment(text: str, role: str) -> str:
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+    return f"📅 {ts} [{role}]: {text.strip()}"
+
+def _append_comment(original: str, new_entry: str) -> str:
+    original = str(original).strip()
+    return f"{original}\n{new_entry}" if original else new_entry
+
+def _render_chat(messages: list, current_role: str):
+    if not messages:
+        st.markdown("<div class='chat-empty'>💬 لا توجد رسائل بعد — ابدأ المحادثة أدناه</div>",
+                    unsafe_allow_html=True)
+        return
+    html = "<div class='chat-wrap'>"
+    prev_date = None
+    for msg in messages:
+        msg_date = msg["dt"].strftime("%Y-%m-%d")
+        if msg_date != prev_date:
+            label = msg["dt"].strftime("%A، %Y-%m-%d")
+            html += f"<div class='chat-divider'>── {label} ──</div>"
+            prev_date = msg_date
+        is_admin = (msg["role"] == "Admin")
+        cls      = "bubble-admin" if is_admin else "bubble-owner"
+        sender   = "المدير" if is_admin else "الموظف"
+        time_s   = msg["dt"].strftime("%H:%M")
+        text_esc = msg["text"].replace("<","&lt;").replace(">","&gt;").replace("\n","<br>")
+        justify  = "flex-end" if is_admin else "flex-start"
+        html += f"""<div style='display:flex;justify-content:{justify}'>
+          <div class='bubble {cls}'>
+            <div class='meta'>{sender} · {time_s}</div>{text_esc}
+          </div></div>"""
+    html += "</div>"
+    st.markdown(html, unsafe_allow_html=True)
+
+def show_activity_chat(ws, df_acts, mabadara, activity, current_role, current_user):
+    mask = ((df_acts["Mabadara"].astype(str).str.strip() == mabadara.strip()) &
+            (df_acts["Activity"].astype(str).str.strip()  == activity.strip()))
+    if not mask.any(): st.warning("لم يُعثر على النشاط."); return
+    row        = df_acts[mask].iloc[0]
+    messages   = _merge_and_sort(str(row.get("Owner_Comment","")),
+                                  str(row.get("Admin_Comment","")))
+    short_act  = activity[:55] + "…" if len(activity) > 55 else activity
+    st.markdown(f"#### 💬 محادثة: {short_act}")
+    st.caption(f"المبادرة: {mabadara[:60]}")
+    c1,c2,c3 = st.columns(3)
+    c1.metric("📨 إجمالي الرسائل", len(messages))
+    c2.metric("🔵 رسائل المدير",   sum(1 for m in messages if m["role"]=="Admin"))
+    c3.metric("🟢 رسائل الموظف",   sum(1 for m in messages if m["role"]=="Owner"))
+    st.markdown("---")
+    chat_h = min(max(len(messages)*80, 200), 500)
+    with st.container(height=chat_h):
+        _render_chat(messages, current_role)
+    st.markdown("---")
+    sender_label = "المدير" if current_role == "Admin" else "الموظف"
+    new_msg = st.text_area(f"✍️ رسالة جديدة ({sender_label})",
+                           placeholder="اكتب ردك هنا...", height=90,
+                           key=f"chat_in_{mabadara[:15]}_{activity[:15]}")
+    col_s, col_t = st.columns([2,1])
+    with col_s:
+        if st.button("📤 إرسال", type="primary", use_container_width=True,
+                     key=f"chat_send_{mabadara[:12]}_{activity[:12]}"):
+            if not new_msg.strip(): st.warning("الرسالة فارغة.")
+            else:
+                entry = _format_new_comment(new_msg, current_role)
+                col_name = "Admin_Comment" if current_role == "Admin" else "Owner_Comment"
+                if col_name not in df_acts.columns: df_acts[col_name] = ""
+                old = str(df_acts.loc[mask, col_name].values[0]).strip()
+                df_acts.loc[mask, col_name] = _append_comment(old, entry)
+                try:
+                    df_c = clean_df_for_gspread(df_acts)
+                    ws.update(values=[df_c.columns.tolist()] + df_c.values.tolist(), range_name="A1")
+                    st.success("✅ تم الإرسال!"); time.sleep(0.8); st.rerun()
+                except Exception as e: st.error(f"خطأ: {e}")
+    with col_t:
+        st.caption(f"الوقت: {datetime.now().strftime('%H:%M')}")
+
+def show_kpi_chat(ws_kpi, df_kpi, kpi_name, current_role, current_user):
+    mask = df_kpi["KPI_Name"].astype(str).str.strip() == kpi_name.strip()
+    if not mask.any(): st.warning("لم يُعثر على المؤشر."); return
+    row      = df_kpi[mask].iloc[0]
+    messages = _merge_and_sort(str(row.get("Owner_Comment","")),
+                                str(row.get("Admin_Comment","")))
+    short_k  = kpi_name[:55] + "…" if len(kpi_name) > 55 else kpi_name
+    st.markdown(f"#### 💬 محادثة المؤشر: {short_k}")
+    c1,c2,c3 = st.columns(3)
+    c1.metric("📨 إجمالي", len(messages))
+    c2.metric("🔵 المدير",  sum(1 for m in messages if m["role"]=="Admin"))
+    c3.metric("🟢 الموظف",  sum(1 for m in messages if m["role"]=="Owner"))
+    st.markdown("---")
+    chat_h = min(max(len(messages)*80, 200), 500)
+    with st.container(height=chat_h):
+        _render_chat(messages, current_role)
+    st.markdown("---")
+    sender_label = "المدير" if current_role == "Admin" else "الموظف"
+    new_msg = st.text_area(f"✍️ رسالة جديدة ({sender_label})",
+                           placeholder="اكتب ردك هنا...", height=90,
+                           key=f"kpi_chat_in_{kpi_name[:30]}")
+    if st.button("📤 إرسال", type="primary", use_container_width=True,
+                 key=f"kpi_chat_send_{kpi_name[:25]}"):
+        if not new_msg.strip(): st.warning("الرسالة فارغة.")
+        else:
+            entry    = _format_new_comment(new_msg, current_role)
+            col_name = "Admin_Comment" if current_role == "Admin" else "Owner_Comment"
+            if col_name not in df_kpi.columns: df_kpi[col_name] = ""
+            old = str(df_kpi.loc[mask, col_name].values[0]).strip()
+            df_kpi.loc[mask, col_name] = _append_comment(old, entry)
+            try:
+                df_c = clean_df_for_gspread(df_kpi)
+                ws_kpi.update(values=[df_c.columns.tolist()] + df_c.values.tolist(), range_name="A1")
+                st.success("✅ تم الإرسال!"); time.sleep(0.8); st.rerun()
+            except Exception as e: st.error(f"خطأ: {e}")
+
+# ---------------------------------------------------------
+# 6. نظام التتبع التاريخي
+# ---------------------------------------------------------
+@st.cache_data(ttl=120, show_spinner=False)
+def load_kpi_history(_cache_key: str) -> pd.DataFrame:
+    COLS  = ["KPI_Name","Date","Actual","Target","Recorded_By","Note"]
+    empty = pd.DataFrame(columns=COLS)
+    try:
+        sh = get_sheet_connection()
+        try: ws = sh.worksheet(KPI_HISTORY_SHEET)
+        except gspread.exceptions.WorksheetNotFound:
+            ws = sh.add_worksheet(title=KPI_HISTORY_SHEET, rows=2000, cols=6)
+            ws.append_row(COLS); return empty
+        records = ws.get_all_records()
+        if not records: return empty
+        df = pd.DataFrame(records)
+        df["Date"]   = pd.to_datetime(df["Date"], errors="coerce")
+        df["Actual"] = df["Actual"].apply(safe_float)
+        df["Target"] = df["Target"].apply(safe_float)
+        return df.dropna(subset=["Date"])
+    except Exception as e:
+        st.warning(f"تحذير: تعذّر تحميل السجل التاريخي — {e}"); return empty
+
+def _get_or_create_history_ws(sh):
+    try: return sh.worksheet(KPI_HISTORY_SHEET)
+    except gspread.exceptions.WorksheetNotFound:
+        ws = sh.add_worksheet(title=KPI_HISTORY_SHEET, rows=2000, cols=6)
+        ws.append_row(["KPI_Name","Date","Actual","Target","Recorded_By","Note"]); return ws
+
+def save_kpi_snapshot(kpi_name, actual, target, recorded_by, note="") -> bool:
+    today_str = date.today().isoformat()
+    try:
+        sh  = get_sheet_connection()
+        ws  = _get_or_create_history_ws(sh)
+        recs = ws.get_all_records()
+        for i, r in enumerate(recs):
+            if (str(r.get("KPI_Name","")).strip() == kpi_name.strip()
+                    and str(r.get("Date","")).strip() == today_str):
+                ws.update(f"A{i+2}:F{i+2}",
+                          [[kpi_name,today_str,actual,target,recorded_by,note]])
+                load_kpi_history.clear(); return True
+        ws.append_row([kpi_name,today_str,actual,target,recorded_by,note])
+        load_kpi_history.clear(); return True
+    except Exception as e:
+        st.error(f"خطأ في حفظ السجل التاريخي: {e}"); return False
+
+def save_all_kpis_snapshot(df_kpi, recorded_by) -> int:
+    today_str = date.today().isoformat()
+    try:
+        sh  = get_sheet_connection()
+        ws  = _get_or_create_history_ws(sh)
+        existing  = ws.get_all_records()
+        exist_map = {(str(r["KPI_Name"]).strip(), str(r["Date"]).strip()): i+2
+                     for i, r in enumerate(existing)}
+        new_rows, update_ops = [], []
+        for _, row in df_kpi.iterrows():
+            kpi    = str(row.get("KPI_Name","")).strip()
+            actual = safe_float(row.get("Actual",0))
+            target = safe_float(row.get("Target",0))
+            key    = (kpi, today_str)
+            if key in exist_map:
+                update_ops.append((exist_map[key],[kpi,today_str,actual,target,recorded_by,"لقطة شاملة"]))
+            else:
+                new_rows.append([kpi,today_str,actual,target,recorded_by,"لقطة شاملة"])
+        for row_idx, data in update_ops:
+            ws.update(f"A{row_idx}:F{row_idx}", [data])
+        if new_rows:
+            ws.append_rows(new_rows, value_input_option="USER_ENTERED")
+        load_kpi_history.clear()
+        return len(new_rows) + len(update_ops)
+    except Exception as e:
+        st.error(f"خطأ في اللقطة الشاملة: {e}"); return 0
+
+def compute_trend(series: pd.Series) -> dict:
+    vals = series.dropna().tolist()
+    if len(vals) < 2:
+        return {"direction":"flat","pct":0.0,"label":"لا يوجد سجل كافٍ","css":"trend-flat","icon":"➖"}
+    last, prev = vals[-1], vals[-2]
+    pct = ((last-prev)/abs(prev)*100) if prev != 0 else (100.0 if last > 0 else 0.0)
+    if   pct >  2: return {"direction":"up",  "pct":pct, "label":f"▲ {pct:.1f}%",      "css":"trend-up",   "icon":"▲"}
+    elif pct < -2: return {"direction":"down", "pct":pct, "label":f"▼ {abs(pct):.1f}%", "css":"trend-down", "icon":"▼"}
+    else:          return {"direction":"flat", "pct":pct, "label":"مستقر ➖",             "css":"trend-flat", "icon":"➖"}
+
+def plot_kpi_trend(df_history, kpi_name, direction="تصاعدي", unit="", ctx=""):
+    df = df_history[df_history["KPI_Name"].astype(str).str.strip()==kpi_name.strip()
+                    ].copy().sort_values("Date")
+    if df.empty:
+        st.info("لا توجد بيانات تاريخية بعد — سجّل أول قيمة باستخدام زر التحديث أو اللقطة الشا
