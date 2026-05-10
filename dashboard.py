@@ -710,6 +710,115 @@ def show_history_overview(df_history, df_kpi):
             )
             plot_kpi_trend(df_history, kpi, drx, unit, ctx="_ov")
 
+
+# ---------------------------------------------------------
+# دوال التتبع التاريخي للمؤشرات التشغيلية
+# ---------------------------------------------------------
+OPS_HISTORY_SHEET = "Ops_KPI_History"
+
+@st.cache_data(ttl=120, show_spinner=False)
+def load_ops_history(_key):
+    COLS = ["KPI_Name", "Date", "Actual", "Target", "Recorded_By", "Note"]
+    empty = pd.DataFrame(columns=COLS)
+    try:
+        sh2 = get_sheet_connection()
+        try:
+            ws = sh2.worksheet(OPS_HISTORY_SHEET)
+        except gspread.exceptions.WorksheetNotFound:
+            ws = sh2.add_worksheet(title=OPS_HISTORY_SHEET, rows=2000, cols=6)
+            ws.append_row(COLS)
+            return empty
+        recs = ws.get_all_records()
+        if not recs:
+            return empty
+        df = pd.DataFrame(recs)
+        df["Date"]   = pd.to_datetime(df["Date"], errors="coerce")
+        df["Actual"] = df["Actual"].apply(safe_float)
+        df["Target"] = df["Target"].apply(safe_float)
+        return df.dropna(subset=["Date"])
+    except Exception as e:
+        st.warning("تحذير تاريخ تشغيلي: " + str(e))
+        return empty
+
+def save_ops_snapshot(kpi_name, actual, target, recorded_by, note=""):
+    today_str = date.today().isoformat()
+    try:
+        sh2 = get_sheet_connection()
+        try:
+            ws = sh2.worksheet(OPS_HISTORY_SHEET)
+        except gspread.exceptions.WorksheetNotFound:
+            ws = sh2.add_worksheet(title=OPS_HISTORY_SHEET, rows=2000, cols=6)
+            ws.append_row(["KPI_Name","Date","Actual","Target","Recorded_By","Note"])
+        recs = ws.get_all_records()
+        for i, r in enumerate(recs):
+            if (str(r.get("KPI_Name","")).strip() == kpi_name.strip()
+                    and str(r.get("Date","")).strip() == today_str):
+                ws.update("A" + str(i+2) + ":F" + str(i+2),
+                          [[kpi_name, today_str, actual, target, recorded_by, note]])
+                load_ops_history.clear()
+                return True
+        ws.append_row([kpi_name, today_str, actual, target, recorded_by, note])
+        load_ops_history.clear()
+        return True
+    except Exception as e:
+        st.error("خطأ في حفظ التاريخ التشغيلي: " + str(e))
+        return False
+
+def plot_ops_trend(df_hist, kpi_name, direction="تصاعدي", ctx=""):
+    df = df_hist[
+        df_hist["KPI_Name"].astype(str).str.strip() == kpi_name.strip()
+    ].copy().sort_values("Date")
+    if df.empty:
+        st.info("لا توجد بيانات تاريخية بعد لهذا المؤشر.")
+        return
+    trend = compute_trend(df["Actual"])
+    if direction == "تنازلي":
+        lc = "#27ae60" if trend["direction"] == "down" else (
+             "#e74c3c" if trend["direction"] == "up" else "#3498db")
+    else:
+        lc = "#27ae60" if trend["direction"] == "up" else (
+             "#e74c3c" if trend["direction"] == "down" else "#3498db")
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=df["Date"], y=df["Target"], mode="lines", name="المستهدف",
+        line=dict(color="#e67e22", width=2, dash="dot"),
+        hovertemplate="المستهدف: %{y}<extra></extra>",
+    ))
+    act_texts = [str(round(float(v), 2)) for v in df["Actual"]]
+    fig.add_trace(go.Scatter(
+        x=df["Date"], y=df["Actual"], mode="lines+markers+text", name="الفعلي",
+        line=dict(color=lc, width=3),
+        marker=dict(size=8, color=lc, line=dict(color="white", width=2)),
+        text=act_texts, textposition="top center",
+        textfont=dict(size=11, color=lc),
+        hovertemplate="<b>%{x|%Y-%m-%d}</b><br>الفعلي: %{y}<extra></extra>",
+    ))
+    last     = df.iloc[-1]
+    last_val = str(round(float(last["Actual"]), 2))
+    fig.add_trace(go.Scatter(
+        x=[last["Date"]], y=[last["Actual"]], mode="markers", showlegend=False,
+        marker=dict(size=14, color=lc, line=dict(color="white", width=3)),
+        hovertemplate="آخر قيمة: " + last_val + "<extra></extra>",
+    ))
+    chart_title = "<b>" + kpi_name[:50] + "</b>   " + trend["label"]
+    fig.update_layout(
+        title=dict(text=chart_title, x=0.5, xanchor="center", font=dict(size=13)),
+        xaxis=dict(title="", showgrid=True, gridcolor="#f0f0f0", tickformat="%b %Y"),
+        yaxis=dict(title="القيمة", showgrid=True, gridcolor="#f0f0f0"),
+        legend=dict(orientation="h", y=1.15, x=0.5, xanchor="center"),
+        plot_bgcolor="white", paper_bgcolor="white",
+        margin=dict(t=70, b=30, l=40, r=20), height=290,
+        hovermode="x unified",
+    )
+    safe_key = (kpi_name + ctx).replace(" ","_").replace("/","_").replace("-","_")[:80]
+    st.plotly_chart(fig, use_container_width=True, key="ops_trend_" + safe_key)
+    with st.expander("📋 جدول البيانات التاريخية"):
+        show = df[["Date","Actual","Target","Recorded_By","Note"]].copy()
+        show["Date"] = show["Date"].dt.strftime("%Y-%m-%d")
+        show.columns = ["التاريخ","الفعلي","المستهدف","سجّل بواسطة","ملاحظة"]
+        st.dataframe(show.sort_values("التاريخ", ascending=False),
+                     hide_index=True, use_container_width=True)
+
 # ---------------------------------------------------------
 # 8. محرك التنبيهات
 # ---------------------------------------------------------
@@ -1329,6 +1438,42 @@ def admin_view(sh, user_name):
                 showlegend=False,
             )
             st.plotly_chart(fig_ops, use_container_width=True, key="ops_bar_chart")
+
+            # ── التتبع التاريخي ──
+            st.markdown("---")
+            st.markdown("#### 📈 التتبع التاريخي للمؤشر")
+            df_ops_hist = load_ops_history(SHEET_ID + "_ops")
+            if df_ops_hist.empty:
+                st.info("لا يوجد سجل تاريخي بعد — سيُحفظ تلقائياً عند كل تحديث.")
+            else:
+                recorded_ops = df_ops_hist["KPI_Name"].astype(str).str.strip().unique().tolist()
+                sel_hist_ops = st.selectbox(
+                    "اختر المؤشر لعرض اتجاهه:",
+                    ["— اختر —"] + recorded_ops,
+                    key="ops_hist_select",
+                )
+                if sel_hist_ops and sel_hist_ops != "— اختر —":
+                    row_dir = df_ops[df_ops["المؤشر"].astype(str).str.strip() == sel_hist_ops.strip()]
+                    drx_ops = str(row_dir["الاتجاه"].values[0]).strip() if not row_dir.empty else "تصاعدي"
+                    plot_ops_trend(df_ops_hist, sel_hist_ops, drx_ops, ctx="_adm_ops")
+                    with st.expander("➕ إضافة قيمة تاريخية يدوية"):
+                        with st.form("ops_manual_entry"):
+                            mc1, mc2, mc3 = st.columns(3)
+                            with mc1:
+                                m_date = st.date_input("التاريخ", value=date.today(), key="ops_md")
+                            with mc2:
+                                m_act = st.number_input("القيمة الفعلية", value=0.0, key="ops_ma")
+                            with mc3:
+                                r_dir2 = df_ops[df_ops["المؤشر"].astype(str).str.strip()==sel_hist_ops.strip()]
+                                m_tgt  = safe_float(r_dir2["المستهدف 2026"].values[0]) if not r_dir2.empty else 0.0
+                                m_tgt2 = st.number_input("المستهدف", value=m_tgt, key="ops_mt")
+                            m_note = st.text_input("ملاحظة", key="ops_mn")
+                            if st.form_submit_button("💾 حفظ"):
+                                save_ops_snapshot(sel_hist_ops, m_act, m_tgt2, user_name,
+                                                  m_note or "إدخال يدوي")
+                                st.success("✅ تم الحفظ!")
+                                time.sleep(1)
+                                st.rerun()
 
             # ── تحديث البيانات — متاح لـ f.qahtany فقط أو Admin ──
             st.markdown("---")
@@ -1951,11 +2096,37 @@ def owner_view(sh, user_name, my_initiatives_str):
                                         values=[cdf_o.columns.tolist()] + cdf_o.values.tolist(),
                                         range_name="A1",
                                     )
+                                    # حفظ في السجل التاريخي
+                                    save_ops_snapshot(
+                                        sel_ops_o, new_act_o,
+                                        safe_float(df_o2.loc[msk_o, "المستهدف 2026"].values[0]),
+                                        user_name,
+                                        note_o[:80] if note_o else "تحديث",
+                                    )
                                     st.success("✅ تم الحفظ! النسبة: " + str(pct_o) + "%")
                                     time.sleep(1)
                                     st.rerun()
                             except Exception as e:
                                 st.error("خطأ: " + str(e))
+
+            # ── عرض اتجاه المؤشر بعد التحديث ──
+            st.markdown("---")
+            st.markdown("#### 📈 الاتجاه التاريخي")
+            df_ops_hist_o = load_ops_history(SHEET_ID + "_ops")
+            if df_ops_hist_o.empty:
+                st.info("لا يوجد سجل تاريخي بعد — سيُحفظ تلقائياً عند أول تحديث.")
+            else:
+                recorded_ops_o = df_ops_hist_o["KPI_Name"].astype(str).str.strip().unique().tolist()
+                if recorded_ops_o:
+                    sel_hist_o = st.selectbox(
+                        "اختر المؤشر:",
+                        ["— اختر —"] + recorded_ops_o,
+                        key="ops_owner_hist_sel",
+                    )
+                    if sel_hist_o and sel_hist_o != "— اختر —":
+                        rd = df_ops_o[df_ops_o["المؤشر"].astype(str).str.strip()==sel_hist_o.strip()]
+                        drx_o2 = str(rd["الاتجاه"].values[0]).strip() if not rd.empty else "تصاعدي"
+                        plot_ops_trend(df_ops_hist_o, sel_hist_o, drx_o2, ctx="_own_ops")
 
     elif view == "💬 محادثاتي":
         st.markdown("### 💬 محادثاتي مع المدير")
