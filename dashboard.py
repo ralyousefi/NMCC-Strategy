@@ -981,18 +981,14 @@ def admin_view(sh, user_name):
 
     show_alerts_panel(df_acts, df_kpi)
 
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-        "📋 تفاصيل المبادرات",
-        "📊 مؤشرات الأداء",
-        "🏥 صحة المبادرات",
-        "📈 التتبع التاريخي",
-        "📷 تسجيل لقطة شاملة",
-        "📄 تصدير PDF",
-        "💬 المحادثات",
-    ])
+    view = st.selectbox(
+        "القسم:",
+        ["📋 تفاصيل المبادرات", "📊 مؤشرات الأداء", "🏥 صحة المبادرات", "📈 التتبع التاريخي", "📷 تسجيل لقطة شاملة", "📄 تصدير PDF", "💬 المحادثات"],
+        key="admin_view_select",
+    )
+    st.markdown("---")
 
-    # ── تبويب 1: المبادرات ──
-    with tab1:
+    if view == "📋 تفاصيل المبادرات":
         try:
             if "Admin_Comment" not in df_acts.columns:
                 df_acts["Admin_Comment"] = ""
@@ -1068,8 +1064,7 @@ def admin_view(sh, user_name):
         except Exception as e:
             st.error("خطأ: " + str(e))
 
-    # ── تبويب 2: المؤشرات ──
-    with tab2:
+    elif view == "📊 مؤشرات الأداء":
         if df_kpi is None:
             st.error("تعذّر تحميل المؤشرات.")
         else:
@@ -1139,12 +1134,10 @@ def admin_view(sh, user_name):
                     st.markdown("<div class='history-box'>" + ac_v + "</div>",
                                 unsafe_allow_html=True)
 
-    # ── تبويب 3: صحة المبادرات ──
-    with tab3:
+    elif view == "🏥 صحة المبادرات":
         show_health_dashboard(df_acts)
 
-    # ── تبويب 4: التتبع التاريخي ──
-    with tab4:
+    elif view == "📈 التتبع التاريخي":
         if df_kpi is None:
             st.error("تعذّر تحميل المؤشرات.")
         else:
@@ -1193,8 +1186,7 @@ def admin_view(sh, user_name):
                             except Exception as e:
                                 st.error("خطأ: " + str(e))
 
-    # ── تبويب 5: لقطة شاملة ──
-    with tab5:
+    elif view == "📷 تسجيل لقطة شاملة":
         st.markdown("### 📷 تسجيل لقطة شاملة لجميع المؤشرات")
         st.markdown(
             "<div class='snapshot-info'>📌 <b>متى تستخدم هذا؟</b><br>"
@@ -1232,8 +1224,7 @@ def admin_view(sh, user_name):
                 st.caption("آخر لقطة: **" + ld_str + "** — " + str(n_last) +
                            " مؤشر | إجمالي السجلات: " + str(len(df_history)))
 
-    # ── تبويب 6: تصدير PDF ──
-    with tab6:
+    elif view == "📄 تصدير PDF":
         if df_kpi is None:
             st.error("تعذّر تحميل بيانات المؤشرات.")
         else:
@@ -1318,8 +1309,7 @@ def admin_view(sh, user_name):
             except ImportError:
                 st.warning("ملف pdf_export.py غير موجود. ارفعه مع dashboard.py على GitHub.")
 
-    # ── تبويب 7: المحادثات ──
-    with tab7:
+    elif view == "💬 المحادثات":
         st.markdown("### 💬 محادثات المبادرات والمؤشرات")
         chat_type = st.radio(
             "نوع المحادثة:",
@@ -1351,6 +1341,8 @@ def admin_view(sh, user_name):
 # ---------------------------------------------------------
 # 12. واجهة المالك
 # ---------------------------------------------------------
+
+
 def owner_view(sh, user_name, my_initiatives_str):
     my_list = (
         [x.strip() for x in str(my_initiatives_str).split(",") if x.strip()]
@@ -1379,17 +1371,14 @@ def owner_view(sh, user_name, my_initiatives_str):
 
     show_owner_alerts(all_data, my_list)
 
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "📋 تحديث الأنشطة",
-        "✏️ تحديث مؤشراتي",
-        "🏥 صحة مبادراتي",
-        "📈 اتجاه مؤشراتي",
-        "📊 كافة المؤشرات",
-        "💬 محادثاتي",
-    ])
+    view = st.selectbox(
+        "القسم:",
+        ["📋 تحديث الأنشطة", "✏️ تحديث مؤشراتي", "🏥 صحة مبادراتي", "📈 اتجاه مؤشراتي", "📊 كافة المؤشرات", "💬 محادثاتي"],
+        key="owner_view_select",
+    )
+    st.markdown("---")
 
-    # ── تبويب 1: الأنشطة ──
-    with tab1:
+    if view == "📋 تحديث الأنشطة":
         st.markdown("### 📌 تحديث أنشطة المبادرات")
         if not my_list:
             st.warning("لا توجد مبادرات مسندة إليك.")
@@ -1513,8 +1502,7 @@ def owner_view(sh, user_name, my_initiatives_str):
                             except Exception as e:
                                 st.error("خطأ: " + str(e))
 
-    # ── تبويب 2: تحديث مؤشراتي ──
-    with tab2:
+    elif view == "✏️ تحديث مؤشراتي":
         st.markdown("### 📈 تحديث مؤشرات الأداء المسندة لي")
         cu = st.session_state["user_info"].get("username", "").strip()
         my_kpis = df_kpi[
@@ -1572,13 +1560,11 @@ def owner_view(sh, user_name, my_initiatives_str):
                         except Exception as e:
                             st.error("خطأ: " + str(e))
 
-    # ── تبويب 3: صحة مبادراتي ──
-    with tab3:
+    elif view == "🏥 صحة مبادراتي":
         st.markdown("### 🏥 صحة مبادراتي")
         show_owner_health(all_data, my_list)
 
-    # ── تبويب 4: اتجاه مؤشراتي ──
-    with tab4:
+    elif view == "📈 اتجاه مؤشراتي":
         st.markdown("### 📈 اتجاه مؤشراتي")
         cu3   = st.session_state["user_info"].get("username", "").strip()
         my_k3 = df_kpi[
@@ -1597,13 +1583,11 @@ def owner_view(sh, user_name, my_initiatives_str):
                 plot_kpi_trend(df_hist3, kn3, drx3, unt3, ctx="_own3")
                 st.markdown("---")
 
-    # ── تبويب 5: كافة المؤشرات ──
-    with tab5:
+    elif view == "📊 كافة المؤشرات":
         st.markdown("### 📊 لوحة المؤشرات العامة (للاطلاع)")
         display_kpi_layout(df_kpi, ctx="_own_tab5")
 
-    # ── تبويب 6: محادثاتي ──
-    with tab6:
+    elif view == "💬 محادثاتي":
         st.markdown("### 💬 محادثاتي مع المدير")
         if not my_list:
             st.warning("لا توجد مبادرات مسندة إليك.")
@@ -1625,6 +1609,8 @@ def owner_view(sh, user_name, my_initiatives_str):
 # ---------------------------------------------------------
 # 13. واجهة المشاهد
 # ---------------------------------------------------------
+
+
 def viewer_view(sh, user_name):
     st.markdown("### 👋 مرحباً، " + user_name + " (نسخة للاطلاع)")
     try:
