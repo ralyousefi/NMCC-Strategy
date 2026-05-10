@@ -1833,59 +1833,50 @@ def owner_view(sh, user_name, my_initiatives_str):
                     if row["_prog"] >= 50:  return "#185FA5"
                     return "#BA7517"
 
-                # ══ Gantt بـ Scatter shapes — الطريقة الصحيحة مع تواريخ حقيقية ══
+                # ══ Gantt بـ go.Bar الصحيح — تواريخ كـ timestamps ══
                 fig_g = go.Figure()
+                n_acts = len(df_g)
+                act_labels = list(df_g["Activity"].astype(str))
 
-                # ترتيب الأنشطة لمحور Y (من الأعلى للأسفل)
-                act_names = list(df_g["Activity"].astype(str))
-                # نعكس الترتيب لأن plotly يرسم من الأسفل
-                act_names_rev = list(reversed(act_names))
-                act_index = {name: i for i, name in enumerate(act_names_rev)}
-                n_acts = len(act_names)
-                BAR_H = 0.35  # ارتفاع الشريط
-
-                for _, row in df_g.iterrows():
-                    col_g  = bar_color_g(row)
-                    pct_g  = row["_prog"]
-                    yi     = act_index[str(row["Activity"])]
-                    s_dt   = row["_start"]
-                    e_dt   = row["_end"]
-                    dur    = max((e_dt - s_dt).days, 1)
-                    prog_e = s_dt + pd.Timedelta(days=dur * pct_g / 100)
+                for i, (_, row) in enumerate(df_g.iterrows()):
+                    col_g   = bar_color_g(row)
+                    pct_g   = int(row["_prog"])
+                    s_dt    = row["_start"]
+                    e_dt    = row["_end"]
+                    dur_ms  = int((e_dt - s_dt).total_seconds() * 1000)
+                    prog_ms = int(dur_ms * pct_g / 100)
+                    act_lbl = str(row["Activity"])
                     stat_lbl = ("متأخر" if row["_status"]=="late"
                                 else ("مكتمل" if pct_g>=100 else "جارٍ"))
+                    base_ms = int(s_dt.timestamp() * 1000)
 
-                    # ── خلفية الشريط الكامل ──
-                    fig_g.add_shape(
-                        type="rect",
-                        x0=str(s_dt.date()), x1=str(e_dt.date()),
-                        y0=yi - BAR_H, y1=yi + BAR_H,
-                        fillcolor="rgba(180,178,169,0.18)",
-                        line=dict(width=0),
-                        layer="below",
-                    )
-
-                    # ── شريط الإنجاز ──
-                    if pct_g > 0:
-                        fig_g.add_shape(
-                            type="rect",
-                            x0=str(s_dt.date()), x1=str(prog_e.date()),
-                            y0=yi - BAR_H, y1=yi + BAR_H,
-                            fillcolor=col_g,
-                            line=dict(width=0),
-                        )
-
-                    # ── نقطة شفافة لـ hover ──
-                    mid_dt = s_dt + pd.Timedelta(days=dur // 2)
-                    fig_g.add_trace(go.Scatter(
-                        x=[str(mid_dt.date())],
-                        y=[yi],
-                        mode="markers",
-                        marker=dict(size=1, opacity=0),
+                    # خلفية كاملة
+                    fig_g.add_trace(go.Bar(
+                        x=[dur_ms], y=[act_lbl],
+                        base=[base_ms],
+                        orientation="h",
+                        marker_color="rgba(180,178,169,0.2)",
+                        marker_line_width=0,
                         showlegend=False,
+                        hoverinfo="skip",
+                        width=0.5,
+                    ))
+                    # شريط الإنجاز
+                    fig_g.add_trace(go.Bar(
+                        x=[max(prog_ms, int(dur_ms*0.01))],
+                        y=[act_lbl],
+                        base=[base_ms],
+                        orientation="h",
+                        marker_color=col_g,
+                        marker_line_width=0,
+                        showlegend=False,
+                        width=0.5,
+                        text=str(pct_g) + "%" if pct_g > 5 else "",
+                        textposition="inside",
+                        textfont=dict(color="white", size=10),
                         customdata=[[
                             str(row.get("Mabadara","")),
-                            str(row["Activity"]),
+                            act_lbl,
                             s_dt.strftime("%Y-%m-%d"),
                             e_dt.strftime("%Y-%m-%d"),
                             pct_g, stat_lbl,
@@ -1901,50 +1892,37 @@ def owner_view(sh, user_name, my_initiatives_str):
                         ),
                     ))
 
-                    # ── نسبة الإنجاز كنص ──
-                    if pct_g > 5:
-                        mid_prog = s_dt + pd.Timedelta(days=max(dur * pct_g / 200, 1))
-                        fig_g.add_annotation(
-                            x=str(mid_prog.date()), y=yi,
-                            text=str(pct_g) + "%",
-                            showarrow=False, yanchor="middle", xanchor="center",
-                            font=dict(size=10, color="white", family="Tajawal"),
-                        )
-
                 # خط اليوم
                 fig_g.add_vline(
-                    x=str(today_g.date()),
+                    x=int(today_g.timestamp() * 1000),
                     line_width=1.5, line_dash="dash", line_color="#555",
                     annotation_text="اليوم",
                     annotation_position="top",
                     annotation_font_size=11,
                 )
 
-                min_date = df_g["_start"].min() - pd.Timedelta(days=15)
-                max_date = df_g["_end"].max()   + pd.Timedelta(days=15)
+                min_ts = int((df_g["_start"].min() - pd.Timedelta(days=15)).timestamp() * 1000)
+                max_ts = int((df_g["_end"].max()   + pd.Timedelta(days=15)).timestamp() * 1000)
                 chart_height = max(350, n_acts * 50 + 100)
 
                 fig_g.update_layout(
+                    barmode="overlay",
                     height=chart_height,
                     xaxis=dict(
                         type="date",
-                        range=[str(min_date.date()), str(max_date.date())],
+                        range=[min_ts, max_ts],
                         tickformat="%b %Y",
                         showgrid=True,
                         gridcolor="#eeeeee",
-                        gridwidth=0.5,
                         zeroline=False,
                         title="",
                         tickangle=-30,
                     ),
                     yaxis=dict(
-                        tickmode="array",
-                        tickvals=list(range(n_acts)),
-                        ticktext=act_names_rev,
+                        autorange="reversed",
                         showgrid=False,
                         title="",
                         tickfont=dict(size=11, family="Tajawal"),
-                        range=[-0.7, n_acts - 0.3],
                     ),
                     plot_bgcolor="white",
                     paper_bgcolor="white",
