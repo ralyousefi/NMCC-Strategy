@@ -1765,17 +1765,221 @@ def owner_view(sh, user_name, my_initiatives_str):
     view = st.selectbox(
         "القسم:",
         (
-            ["📋 تحديث الأنشطة", "✏️ تحديث مؤشراتي", "⚙️ المؤشرات التشغيلية",
+            ["📅 مخطط الخطة", "📋 تحديث الأنشطة", "✏️ تحديث مؤشراتي", "⚙️ المؤشرات التشغيلية",
              "🏥 صحة مبادراتي", "📈 اتجاه مؤشراتي", "📊 كافة المؤشرات", "💬 محادثاتي"]
             if st.session_state["user_info"].get("username","").strip() == "f.qahtany"
-            else ["📋 تحديث الأنشطة", "✏️ تحديث مؤشراتي",
+            else ["📅 مخطط الخطة", "📋 تحديث الأنشطة", "✏️ تحديث مؤشراتي",
                   "🏥 صحة مبادراتي", "📈 اتجاه مؤشراتي", "📊 كافة المؤشرات", "💬 محادثاتي"]
         ),
         key="owner_view_select",
     )
     st.markdown("---")
 
-    if view == "📋 تحديث الأنشطة":
+
+    if view == "📅 مخطط الخطة":
+        st.markdown("### 📅 مخطط الخطة الزمنية")
+        if not my_list:
+            st.warning("لا توجد مبادرات مسندة إليك.")
+        else:
+            # ── فلترة ──
+            c_f1, c_f2 = st.columns(2)
+            with c_f1:
+                sel_init_g = st.selectbox(
+                    "المبادرة:",
+                    ["الكل"] + list(my_data["Mabadara"].unique()),
+                    key="gantt_init",
+                )
+            with c_f2:
+                gantt_status = st.radio(
+                    "الحالة:",
+                    ["الكل", "✅ مكتملة", "🟡 جارية", "🔴 متأخرة"],
+                    horizontal=True, key="gantt_status",
+                )
+
+            df_g = my_data.copy() if sel_init_g == "الكل" else                    my_data[my_data["Mabadara"] == sel_init_g].copy()
+
+            # تحضير التواريخ والإنجاز
+            df_g["_start"] = pd.to_datetime(df_g["Start_Date"], errors="coerce")
+            df_g["_end"]   = pd.to_datetime(df_g["End_Date"],   errors="coerce")
+            df_g["_prog"]  = df_g["Progress"].apply(safe_int)
+            df_g = df_g.dropna(subset=["_start", "_end"])
+
+            today_g = pd.Timestamp(date.today())
+
+            def _gantt_status(row):
+                late = row["_end"] < today_g and row["_prog"] < 100
+                if row["_prog"] >= 100: return "done"
+                if late:                return "late"
+                return "progress"
+
+            df_g["_status"] = df_g.apply(_gantt_status, axis=1)
+
+            if gantt_status == "✅ مكتملة":
+                df_g = df_g[df_g["_status"] == "done"]
+            elif gantt_status == "🟡 جارية":
+                df_g = df_g[df_g["_status"] == "progress"]
+            elif gantt_status == "🔴 متأخرة":
+                df_g = df_g[df_g["_status"] == "late"]
+
+            if df_g.empty:
+                st.info("لا توجد أنشطة في هذه الفئة.")
+            else:
+                df_g = df_g.sort_values("_start")
+
+                # ── ألوان الحالة ──
+                def bar_color_g(row):
+                    if row["_prog"] >= 100: return "#3B6D11"
+                    if row["_status"] == "late": return "#A32D2D"
+                    if row["_prog"] >= 50:  return "#185FA5"
+                    return "#BA7517"
+
+                fig_g = go.Figure()
+
+                for _, row in df_g.iterrows():
+                    col_g    = bar_color_g(row)
+                    pct_g    = row["_prog"]
+                    act_name = str(row["Activity"])
+                    dur_days = max((row["_end"] - row["_start"]).days, 1)
+                    prog_days = dur_days * pct_g / 100
+
+                    # خلفية الشريط الكامل
+                    fig_g.add_trace(go.Bar(
+                        x=[dur_days], y=[act_name],
+                        base=[row["_start"]],
+                        orientation="h",
+                        marker_color="rgba(120,120,120,0.12)",
+                        showlegend=False, hoverinfo="skip",
+                        width=0.55,
+                    ))
+
+                    # شريط الإنجاز
+                    fig_g.add_trace(go.Bar(
+                        x=[max(prog_days, 0.5)],
+                        y=[act_name],
+                        base=[row["_start"]],
+                        orientation="h",
+                        marker_color=col_g,
+                        marker_line=dict(color="white", width=0.5),
+                        showlegend=False,
+                        width=0.55,
+                        customdata=[[
+                            str(row.get("Mabadara","")),
+                            row["_start"].strftime("%Y-%m-%d"),
+                            row["_end"].strftime("%Y-%m-%d"),
+                            pct_g,
+                            "متأخر" if row["_status"]=="late" else
+                            ("مكتمل" if row["_prog"]>=100 else "جارٍ"),
+                        ]],
+                        hovertemplate=(
+                            "<b>%{y}</b><br>"
+                            "المبادرة: %{customdata[0]}<br>"
+                            "البداية: %{customdata[1]}<br>"
+                            "النهاية: %{customdata[2]}<br>"
+                            "الإنجاز: <b>%{customdata[3]}%%</b><br>"
+                            "الحالة: <b>%{customdata[4]}</b>"
+                            "<extra></extra>"
+                        ),
+                    ))
+
+                # خط اليوم
+                fig_g.add_vline(
+                    x=today_g.timestamp() * 1000,
+                    line_width=1.5, line_dash="dash", line_color="#666",
+                    annotation_text="اليوم",
+                    annotation_position="top right",
+                    annotation_font_size=11,
+                )
+
+                # تسميات النسبة على الأشرطة
+                for _, row in df_g.iterrows():
+                    pct_g    = row["_prog"]
+                    dur_days = max((row["_end"] - row["_start"]).days, 1)
+                    mid_ts   = row["_start"] + pd.Timedelta(days=dur_days * pct_g / 200)
+                    col_g    = bar_color_g(row)
+                    if pct_g > 8:
+                        fig_g.add_annotation(
+                            x=mid_ts, y=str(row["Activity"]),
+                            text=str(pct_g) + "%",
+                            showarrow=False, yanchor="middle",
+                            font=dict(size=10, color="white", family="Tajawal"),
+                        )
+
+                # تخطيط المخطط
+                min_date = df_g["_start"].min() - pd.Timedelta(days=10)
+                max_date = df_g["_end"].max()   + pd.Timedelta(days=20)
+                chart_height = max(320, len(df_g) * 46 + 80)
+
+                fig_g.update_layout(
+                    barmode="overlay",
+                    height=chart_height,
+                    xaxis=dict(
+                        type="date",
+                        range=[str(min_date.date()), str(max_date.date())],
+                        tickformat="%b %Y",
+                        showgrid=True,
+                        gridcolor="#eeeeee",
+                        gridwidth=0.5,
+                        zeroline=False,
+                        title="",
+                    ),
+                    yaxis=dict(
+                        autorange="reversed",
+                        showgrid=False,
+                        title="",
+                        tickfont=dict(size=12, family="Tajawal"),
+                    ),
+                    plot_bgcolor="white",
+                    paper_bgcolor="white",
+                    margin=dict(t=50, b=40, l=20, r=30),
+                    hoverlabel=dict(
+                        bgcolor="white",
+                        font_size=12,
+                        font_family="Tajawal",
+                    ),
+                    font=dict(family="Tajawal"),
+                )
+                st.plotly_chart(fig_g, use_container_width=True, key="owner_gantt")
+
+                # ── مفتاح الألوان ──
+                legend_cols = st.columns(4)
+                legend_cols[0].markdown(
+                    "<span style='display:inline-block;width:14px;height:14px;"
+                    "background:#3B6D11;border-radius:3px;margin-left:6px'></span>"
+                    "<span style='font-size:12px;color:#1e8449'>مكتمل ≥100%</span>",
+                    unsafe_allow_html=True,
+                )
+                legend_cols[1].markdown(
+                    "<span style='display:inline-block;width:14px;height:14px;"
+                    "background:#185FA5;border-radius:3px;margin-left:6px'></span>"
+                    "<span style='font-size:12px;color:#185FA5'>جارٍ ≥50%</span>",
+                    unsafe_allow_html=True,
+                )
+                legend_cols[2].markdown(
+                    "<span style='display:inline-block;width:14px;height:14px;"
+                    "background:#BA7517;border-radius:3px;margin-left:6px'></span>"
+                    "<span style='font-size:12px;color:#854F0B'>منخفض <50%</span>",
+                    unsafe_allow_html=True,
+                )
+                legend_cols[3].markdown(
+                    "<span style='display:inline-block;width:14px;height:14px;"
+                    "background:#A32D2D;border-radius:3px;margin-left:6px'></span>"
+                    "<span style='font-size:12px;color:#A32D2D'>متأخر</span>",
+                    unsafe_allow_html=True,
+                )
+
+                # ── ملخص سريع ──
+                st.markdown("---")
+                n_done  = len(df_g[df_g["_status"] == "done"])
+                n_prog  = len(df_g[df_g["_status"] == "progress"])
+                n_late  = len(df_g[df_g["_status"] == "late"])
+                avg_p   = round(df_g["_prog"].mean(), 1)
+                ms1,ms2,ms3,ms4 = st.columns(4)
+                ms1.metric("📊 متوسط الإنجاز", str(avg_p) + "%")
+                ms2.metric("✅ مكتملة",         n_done)
+                ms3.metric("🟡 جارية",          n_prog)
+                ms4.metric("🔴 متأخرة",         n_late)
+
+    elif view == "📋 تحديث الأنشطة":
         st.markdown("### 📌 تحديث أنشطة المبادرات")
         if not my_list:
             st.warning("لا توجد مبادرات مسندة إليك.")
