@@ -1905,6 +1905,10 @@ def owner_view(sh, user_name, my_initiatives_str):
                 max_ts = int((df_g["_end"].max()   + pd.Timedelta(days=15)).timestamp() * 1000)
                 chart_height = max(350, n_acts * 50 + 100)
 
+                # هامش ديناميكي بناءً على أطول اسم نشاط
+                max_act_len = max((len(str(a)) for a in df_g["Activity"]), default=10)
+                left_margin = min(max_act_len * 7, 320)
+
                 fig_g.update_layout(
                     barmode="overlay",
                     height=chart_height,
@@ -1917,16 +1921,25 @@ def owner_view(sh, user_name, my_initiatives_str):
                         zeroline=False,
                         title="",
                         tickangle=-30,
+                        side="top",
                     ),
                     yaxis=dict(
                         autorange="reversed",
-                        showgrid=False,
+                        showgrid=True,
+                        gridcolor="#f5f5f5",
                         title="",
-                        tickfont=dict(size=11, family="Tajawal"),
+                        tickfont=dict(size=12, family="Tajawal"),
+                        tickmode="array",
+                        tickvals=list(range(n_acts)),
+                        ticktext=[
+                            (str(a)[:35] + "…") if len(str(a)) > 35 else str(a)
+                            for a in df_g["Activity"]
+                        ],
+                        side="right",
                     ),
                     plot_bgcolor="white",
                     paper_bgcolor="white",
-                    margin=dict(t=50, b=50, l=10, r=30),
+                    margin=dict(t=60, b=40, l=20, r=left_margin),
                     hoverlabel=dict(bgcolor="white", font_size=12, font_family="Tajawal"),
                     font=dict(family="Tajawal"),
                     showlegend=False,
@@ -2403,6 +2416,6 @@ else:
         st.error("خطأ غير متوقع: " + str(e))
 
 st.markdown(
-    '<div class="footer">System Version: 36.0 (NMCC - 2026)</div>',
+    '<div class="footer">System Version: 37.0 (NMCC - 2026)</div>',
     unsafe_allow_html=True,
 )
