@@ -983,7 +983,7 @@ def admin_view(sh, user_name):
 
     view = st.selectbox(
         "القسم:",
-        ["📋 تفاصيل المبادرات", "📊 مؤشرات الأداء", "🏥 صحة المبادرات", "📈 التتبع التاريخي", "📷 تسجيل لقطة شاملة", "📄 تصدير PDF", "💬 المحادثات"],
+        ["📋 تفاصيل المبادرات", "📊 مؤشرات الأداء", "⚙️ المؤشرات التشغيلية", "🏥 صحة المبادرات", "📈 التتبع التاريخي", "📷 تسجيل لقطة شاملة", "📄 تصدير PDF", "💬 المحادثات"],
         key="admin_view_select",
     )
     st.markdown("---")
@@ -1133,6 +1133,188 @@ def admin_view(sh, user_name):
                     ac_v = str(rk.get("Admin_Comment", "لا يوجد"))
                     st.markdown("<div class='history-box'>" + ac_v + "</div>",
                                 unsafe_allow_html=True)
+
+
+    elif view == "⚙️ المؤشرات التشغيلية":
+        st.markdown("### ⚙️ مؤشرات العمليات التشغيلية")
+        st.caption("تحقيق مستهدفات العمليات التشغيلية — البيانات محفوظة في ورقة Operational_KPIs")
+
+        # ── تحميل البيانات ──
+        try:
+            ws_ops = sh.worksheet("Operational_KPIs")
+            df_ops = pd.DataFrame(ws_ops.get_all_records())
+        except Exception:
+            # إنشاء الورقة بالبيانات الأولية إن لم تكن موجودة
+            try:
+                ws_ops = sh.add_worksheet(title="Operational_KPIs", rows=100, cols=6)
+                headers = ["رقم المؤشر", "المؤشر", "المستهدف 2026", "المتحقق", "النسبة", "ملاحظات"]
+                initial_data = [
+                    [1,  "عدد القياسات/ المعايرات المنفذة",                    5955, 996,  "", ""],
+                    [2,  "نسبة المعايرات المنجزة في الوقت المحدد",             1,    0.97, "", ""],
+                    [3,  "الفترة الزمنية المستغرقة لمعايرة/قياس جهاز",        5,    11,   "", ""],
+                    [4,  "عدد الأجهزة المدروسة",                               7818, 1413, "", ""],
+                    [5,  "نسبة جهات تقويم المطابقة المسندة للمركز",           272,  272,  "", ""],
+                    [6,  "عدد الجهات المرتبطة بالوقت الوطني",                 13,   26,   "", ""],
+                    [7,  "عدد مرات الدخول على نظام الوقت",                    622,  200,  "", ""],
+                    [8,  "نسبة انجاز خطة انتاج المواد المرجعية المستهدفة",    0.9,  0,    "", ""],
+                    [9,  "عدد المستفيدين من برامج اختبار الكفاءة الفنية",     147,  52,   "", ""],
+                    [10, "عدد برامج الكفاءة الفنية المقدمة",                  185,  12,   "", ""],
+                    [11, "عدد تقارير الكفاءة الفنية الصادرة",                 79,   18,   "", ""],
+                ]
+                ws_ops.update(values=[headers] + initial_data, range_name="A1")
+                df_ops = pd.DataFrame(initial_data, columns=headers)
+                st.success("✅ تم إنشاء ورقة Operational_KPIs وتعبئتها بالبيانات الأولية.")
+            except Exception as e2:
+                st.error("خطأ في إنشاء الورقة: " + str(e2))
+                df_ops = pd.DataFrame()
+
+        if not df_ops.empty:
+            # ── تأكد من وجود الأعمدة ──
+            required_cols = ["رقم المؤشر", "المؤشر", "المستهدف 2026", "المتحقق", "النسبة", "ملاحظات"]
+            for c in required_cols:
+                if c not in df_ops.columns:
+                    df_ops[c] = ""
+
+            df_ops["المستهدف 2026"] = df_ops["المستهدف 2026"].apply(safe_float)
+            df_ops["المتحقق"]       = df_ops["المتحقق"].apply(safe_float)
+
+            # ── حساب النسبة تلقائياً ──
+            def calc_ops_pct(row):
+                t = row["المستهدف 2026"]
+                a = row["المتحقق"]
+                if t == 0:
+                    return 0.0
+                return round((a / t) * 100, 1)
+
+            df_ops["النسبة"] = df_ops.apply(calc_ops_pct, axis=1)
+
+            # ── بطاقات الملخص ──
+            avg_pct    = round(df_ops["النسبة"].mean(), 1)
+            achieved   = len(df_ops[df_ops["النسبة"] >= 100])
+            on_track   = len(df_ops[(df_ops["النسبة"] >= 50) & (df_ops["النسبة"] < 100)])
+            behind     = len(df_ops[df_ops["النسبة"] < 50])
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("📊 متوسط الإنجاز",   str(avg_pct) + "%")
+            c2.metric("✅ مكتمل (≥100%)",   achieved)
+            c3.metric("🟡 جارٍ (50-99%)",   on_track)
+            c4.metric("🔴 متأخر (<50%)",    behind)
+            st.markdown("---")
+
+            # ── فلترة ──
+            filter_opt = st.radio(
+                "عرض:",
+                ["الكل", "✅ مكتمل", "🟡 جارٍ", "🔴 متأخر"],
+                horizontal=True, key="ops_filter",
+            )
+            if filter_opt == "✅ مكتمل":
+                df_show = df_ops[df_ops["النسبة"] >= 100].copy()
+            elif filter_opt == "🟡 جارٍ":
+                df_show = df_ops[(df_ops["النسبة"] >= 50) & (df_ops["النسبة"] < 100)].copy()
+            elif filter_opt == "🔴 متأخر":
+                df_show = df_ops[df_ops["النسبة"] < 50].copy()
+            else:
+                df_show = df_ops.copy()
+
+            # ── تلوين النسبة ──
+            def color_pct(val):
+                v = float(str(val).replace("%","") or 0)
+                if v >= 100:
+                    return "color: #27ae60; font-weight: bold"
+                elif v >= 50:
+                    return "color: #d35400; font-weight: bold"
+                else:
+                    return "color: #c0392b; font-weight: bold; background-color: #fde8e8"
+
+            styled = df_show.style.applymap(color_pct, subset=["النسبة"])
+
+            st.dataframe(
+                styled,
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "رقم المؤشر":    st.column_config.NumberColumn("#",    width="small"),
+                    "المؤشر":        st.column_config.TextColumn("المؤشر", width="large"),
+                    "المستهدف 2026": st.column_config.NumberColumn("المستهدف 2026"),
+                    "المتحقق":       st.column_config.NumberColumn("المتحقق"),
+                    "النسبة":        st.column_config.NumberColumn("النسبة %", format="%.1f%%"),
+                    "ملاحظات":       st.column_config.TextColumn("ملاحظات", width="medium"),
+                },
+            )
+
+            # ── مخطط شريطي ──
+            st.markdown("#### 📊 مقارنة بصرية")
+            chart_df = df_show.copy()
+            names  = [str(int(r["رقم المؤشر"])) + ". " + str(r["المؤشر"])[:30]
+                      for _, r in chart_df.iterrows()]
+            pcts   = chart_df["النسبة"].tolist()
+            clrs   = []
+            for p in pcts:
+                if p >= 100:   clrs.append("#27ae60")
+                elif p >= 50:  clrs.append("#f39c12")
+                else:          clrs.append("#e74c3c")
+
+            import plotly.graph_objects as go
+            fig_ops = go.Figure(go.Bar(
+                x=pcts, y=names, orientation="h",
+                marker_color=clrs,
+                text=[str(p) + "%" for p in pcts],
+                textposition="outside",
+            ))
+            fig_ops.add_vline(x=100, line_dash="dash", line_color="#27ae60",
+                              annotation_text="المستهدف 100%")
+            fig_ops.update_layout(
+                xaxis=dict(range=[0, max(max(pcts, default=0)*1.2, 120)],
+                           title="نسبة الإنجاز %", showgrid=True, gridcolor="#f0f0f0"),
+                yaxis=dict(autorange="reversed"),
+                plot_bgcolor="white", paper_bgcolor="white",
+                margin=dict(t=20, b=20, l=20, r=80),
+                height=max(250, len(chart_df) * 42),
+                showlegend=False,
+            )
+            st.plotly_chart(fig_ops, use_container_width=True, key="ops_bar_chart")
+
+            # ── تحديث البيانات ──
+            st.markdown("---")
+            st.markdown("#### ✏️ تحديث قيمة المتحقق")
+            col_sel, col_val, col_note = st.columns([3, 2, 3])
+            with col_sel:
+                sel_ops = st.selectbox(
+                    "اختر المؤشر:",
+                    df_ops["المؤشر"].tolist(),
+                    key="ops_select",
+                )
+            if sel_ops:
+                ops_row = df_ops[df_ops["المؤشر"] == sel_ops].iloc[0]
+                with col_val:
+                    new_actual = st.number_input(
+                        "القيمة المتحققة",
+                        value=float(ops_row["المتحقق"]),
+                        key="ops_actual",
+                    )
+                with col_note:
+                    ops_note = st.text_input("ملاحظة", value=str(ops_row["ملاحظات"]), key="ops_note")
+                if st.button("💾 حفظ التحديث", use_container_width=True, key="ops_save"):
+                    with st.spinner("جاري الحفظ..."):
+                        try:
+                            ws_ops2 = sh.worksheet("Operational_KPIs")
+                            df_ops2 = pd.DataFrame(ws_ops2.get_all_records())
+                            mask_ops = df_ops2["المؤشر"] == sel_ops
+                            if mask_ops.any():
+                                df_ops2.loc[mask_ops, "المتحقق"]  = new_actual
+                                df_ops2.loc[mask_ops, "ملاحظات"]  = ops_note
+                                t_val = safe_float(df_ops2.loc[mask_ops, "المستهدف 2026"].values[0])
+                                pct_new = round((new_actual / t_val) * 100, 1) if t_val else 0
+                                df_ops2.loc[mask_ops, "النسبة"] = pct_new
+                                cdf_ops = clean_df_for_gspread(df_ops2)
+                                ws_ops2.update(
+                                    values=[cdf_ops.columns.tolist()] + cdf_ops.values.tolist(),
+                                    range_name="A1",
+                                )
+                                st.success("✅ تم الحفظ! النسبة الجديدة: " + str(pct_new) + "%")
+                                time.sleep(1)
+                                st.rerun()
+                        except Exception as e:
+                            st.error("خطأ: " + str(e))
 
     elif view == "🏥 صحة المبادرات":
         show_health_dashboard(df_acts)
