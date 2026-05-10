@@ -1146,20 +1146,20 @@ def admin_view(sh, user_name):
         except Exception:
             # إنشاء الورقة بالبيانات الأولية إن لم تكن موجودة
             try:
-                ws_ops = sh.add_worksheet(title="Operational_KPIs", rows=100, cols=6)
-                headers = ["رقم المؤشر", "المؤشر", "المستهدف 2026", "المتحقق", "النسبة", "ملاحظات"]
+                ws_ops = sh.add_worksheet(title="Operational_KPIs", rows=100, cols=8)
+                headers = ["رقم المؤشر", "المؤشر", "النوع", "الاتجاه", "المستهدف 2026", "المتحقق", "النسبة", "ملاحظات"]
                 initial_data = [
-                    [1,  "عدد القياسات/ المعايرات المنفذة",                    5955, 996,  "", ""],
-                    [2,  "نسبة المعايرات المنجزة في الوقت المحدد",             1,    0.97, "", ""],
-                    [3,  "الفترة الزمنية المستغرقة لمعايرة/قياس جهاز",        5,    11,   "", ""],
-                    [4,  "عدد الأجهزة المدروسة",                               7818, 1413, "", ""],
-                    [5,  "نسبة جهات تقويم المطابقة المسندة للمركز",           272,  272,  "", ""],
-                    [6,  "عدد الجهات المرتبطة بالوقت الوطني",                 13,   26,   "", ""],
-                    [7,  "عدد مرات الدخول على نظام الوقت",                    622,  200,  "", ""],
-                    [8,  "نسبة انجاز خطة انتاج المواد المرجعية المستهدفة",    0.9,  0,    "", ""],
-                    [9,  "عدد المستفيدين من برامج اختبار الكفاءة الفنية",     147,  52,   "", ""],
-                    [10, "عدد برامج الكفاءة الفنية المقدمة",                  185,  12,   "", ""],
-                    [11, "عدد تقارير الكفاءة الفنية الصادرة",                 79,   18,   "", ""],
+                    [1,  "عدد القياسات/ المعايرات المنفذة",                   "عدد",   "تصاعدي", 5955, 996,  "", ""],
+                    [2,  "نسبة المعايرات المنجزة في الوقت المحدد",            "نسبة",  "تصاعدي", 1,    0.97, "", ""],
+                    [3,  "الفترة الزمنية المستغرقة لمعايرة/قياس جهاز",       "عدد",   "تنازلي", 5,    11,   "", ""],
+                    [4,  "عدد الأجهزة المدروسة",                              "عدد",   "تصاعدي", 7818, 1413, "", ""],
+                    [5,  "نسبة جهات تقويم المطابقة المسندة للمركز",          "نسبة",  "تصاعدي", 272,  272,  "", ""],
+                    [6,  "عدد الجهات المرتبطة بالوقت الوطني",                "عدد",   "تصاعدي", 13,   26,   "", ""],
+                    [7,  "عدد مرات الدخول على نظام الوقت",                   "عدد",   "تصاعدي", 622,  200,  "", ""],
+                    [8,  "نسبة انجاز خطة انتاج المواد المرجعية المستهدفة",   "نسبة",  "تصاعدي", 0.9,  0,    "", ""],
+                    [9,  "عدد المستفيدين من برامج اختبار الكفاءة الفنية",    "عدد",   "تصاعدي", 147,  52,   "", ""],
+                    [10, "عدد برامج الكفاءة الفنية المقدمة",                 "عدد",   "تصاعدي", 185,  12,   "", ""],
+                    [11, "عدد تقارير الكفاءة الفنية الصادرة",                "عدد",   "تصاعدي", 79,   18,   "", ""],
                 ]
                 ws_ops.update(values=[headers] + initial_data, range_name="A1")
                 df_ops = pd.DataFrame(initial_data, columns=headers)
@@ -1170,34 +1170,64 @@ def admin_view(sh, user_name):
 
         if not df_ops.empty:
             # ── تأكد من وجود الأعمدة ──
-            required_cols = ["رقم المؤشر", "المؤشر", "المستهدف 2026", "المتحقق", "النسبة", "ملاحظات"]
+            required_cols = ["رقم المؤشر", "المؤشر", "النوع", "الاتجاه",
+                             "المستهدف 2026", "المتحقق", "النسبة", "ملاحظات"]
             for c in required_cols:
                 if c not in df_ops.columns:
                     df_ops[c] = ""
 
+            # إضافة قيم افتراضية للأعمدة الجديدة إن كانت فارغة
+            _default_noa = {
+                "عدد القياسات/ المعايرات المنفذة":                  ("عدد",  "تصاعدي"),
+                "نسبة المعايرات المنجزة في الوقت المحدد":            ("نسبة", "تصاعدي"),
+                "الفترة الزمنية المستغرقة لمعايرة/قياس جهاز":       ("عدد",  "تنازلي"),
+                "عدد الأجهزة المدروسة":                              ("عدد",  "تصاعدي"),
+                "نسبة جهات تقويم المطابقة المسندة للمركز":          ("نسبة", "تصاعدي"),
+                "عدد الجهات المرتبطة بالوقت الوطني":                ("عدد",  "تصاعدي"),
+                "عدد مرات الدخول على نظام الوقت":                   ("عدد",  "تصاعدي"),
+                "نسبة انجاز خطة انتاج المواد المرجعية المستهدفة":   ("نسبة", "تصاعدي"),
+                "عدد المستفيدين من برامج اختبار الكفاءة الفنية":    ("عدد",  "تصاعدي"),
+                "عدد برامج الكفاءة الفنية المقدمة":                 ("عدد",  "تصاعدي"),
+                "عدد تقارير الكفاءة الفنية الصادرة":                ("عدد",  "تصاعدي"),
+            }
+            for idx_r, row_r in df_ops.iterrows():
+                kpi_r = str(row_r["المؤشر"]).strip()
+                if kpi_r in _default_noa:
+                    if not str(row_r.get("النوع","")).strip():
+                        df_ops.at[idx_r, "النوع"]    = _default_noa[kpi_r][0]
+                    if not str(row_r.get("الاتجاه","")).strip():
+                        df_ops.at[idx_r, "الاتجاه"]  = _default_noa[kpi_r][1]
+
             df_ops["المستهدف 2026"] = df_ops["المستهدف 2026"].apply(safe_float)
             df_ops["المتحقق"]       = df_ops["المتحقق"].apply(safe_float)
 
-            # ── حساب النسبة تلقائياً ──
+            # ── حساب النسبة بناءً على الاتجاه ──
             def calc_ops_pct(row):
-                t = row["المستهدف 2026"]
-                a = row["المتحقق"]
+                t = safe_float(row["المستهدف 2026"])
+                a = safe_float(row["المتحقق"])
                 if t == 0:
                     return 0.0
-                return round((a / t) * 100, 1)
+                pct = round((a / t) * 100, 1)
+                return pct
 
             df_ops["النسبة"] = df_ops.apply(calc_ops_pct, axis=1)
 
             # ── بطاقات الملخص ──
-            avg_pct    = round(df_ops["النسبة"].mean(), 1)
-            achieved   = len(df_ops[df_ops["النسبة"] >= 100])
-            on_track   = len(df_ops[(df_ops["النسبة"] >= 50) & (df_ops["النسبة"] < 100)])
-            behind     = len(df_ops[df_ops["النسبة"] < 50])
+            def _is_good(row):
+                d = str(row.get("الاتجاه","تصاعدي")).strip()
+                p = safe_float(row["النسبة"])
+                return (p >= 100) if d == "تصاعدي" else (p <= 100)
+
+            good_n  = sum(1 for _, r in df_ops.iterrows() if _is_good(r))
+            avg_pct = round(df_ops["النسبة"].mean(), 1)
+            achieved = len(df_ops[df_ops["النسبة"] >= 100])
+            on_track = len(df_ops[(df_ops["النسبة"] >= 50) & (df_ops["النسبة"] < 100)])
+            behind   = len(df_ops[df_ops["النسبة"] < 50])
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("📊 متوسط الإنجاز",   str(avg_pct) + "%")
-            c2.metric("✅ مكتمل (≥100%)",   achieved)
-            c3.metric("🟡 جارٍ (50-99%)",   on_track)
-            c4.metric("🔴 متأخر (<50%)",    behind)
+            c1.metric("📊 متوسط الإنجاز",  str(avg_pct) + "%")
+            c2.metric("✅ مكتمل (≥100%)",  achieved)
+            c3.metric("🟡 جارٍ (50-99%)",  on_track)
+            c4.metric("🔴 متأخر (<50%)",   behind)
             st.markdown("---")
 
             # ── فلترة ──
@@ -1215,35 +1245,48 @@ def admin_view(sh, user_name):
             else:
                 df_show = df_ops.copy()
 
-            # ── تلوين النسبة ──
-            def color_pct(val):
-                v = float(str(val).replace("%","") or 0)
-                if v >= 100:
-                    return "color: #27ae60; font-weight: bold"
-                elif v >= 50:
-                    return "color: #d35400; font-weight: bold"
-                else:
-                    return "color: #c0392b; font-weight: bold; background-color: #fde8e8"
-
-            styled = df_show.style.applymap(color_pct, subset=["النسبة"])
-
-            # تنسيق الأرقام — إزالة الأصفار الزائدة
+            # ── تنسيق الأرقام أولاً (قبل style) ──
             def fmt_num(v):
                 try:
                     f = float(v)
                     return int(f) if f == int(f) else round(f, 2)
                 except:
                     return v
-            df_show["المستهدف 2026"] = df_show["المستهدف 2026"].apply(fmt_num)
-            df_show["المتحقق"]       = df_show["المتحقق"].apply(fmt_num)
+
+            df_show = df_show.copy()
+            df_show["المستهدف 2026"] = df_show["المستهدف 2026"].apply(fmt_num).astype(str)
+            df_show["المتحقق"]       = df_show["المتحقق"].apply(fmt_num).astype(str)
+
+            # ── تلوين النسبة بناءً على الاتجاه ──
+            def color_pct_row(row):
+                styles = [""] * len(row)
+                col_idx = list(row.index).index("النسبة") if "النسبة" in row.index else -1
+                if col_idx < 0:
+                    return styles
+                v   = safe_float(row["النسبة"])
+                d   = str(row.get("الاتجاه","تصاعدي")).strip()
+                good = (v >= 100) if d == "تصاعدي" else (v <= 100)
+                mid  = (50 <= v < 100) if d == "تصاعدي" else (100 < v <= 150)
+                if good:
+                    s = "color: #27ae60; font-weight: bold"
+                elif mid:
+                    s = "color: #d35400; font-weight: bold"
+                else:
+                    s = "color: #c0392b; font-weight: bold; background-color: #fde8e8"
+                styles[col_idx] = s
+                return styles
+
+            styled = df_show.style.apply(color_pct_row, axis=1)
 
             st.dataframe(
                 styled,
                 hide_index=True,
                 use_container_width=True,
                 column_config={
-                    "رقم المؤشر":    st.column_config.NumberColumn("#",    width="small", format="%d"),
+                    "رقم المؤشر":    st.column_config.NumberColumn("#", width="small", format="%d"),
                     "المؤشر":        st.column_config.TextColumn("المؤشر", width="large"),
+                    "النوع":         st.column_config.TextColumn("النوع", width="small"),
+                    "الاتجاه":       st.column_config.TextColumn("الاتجاه", width="small"),
                     "المستهدف 2026": st.column_config.TextColumn("المستهدف 2026"),
                     "المتحقق":       st.column_config.TextColumn("المتحقق"),
                     "النسبة":        st.column_config.NumberColumn("النسبة %", format="%.1f%%"),
@@ -1815,8 +1858,8 @@ def owner_view(sh, user_name, my_initiatives_str):
                 df_ops_o["المتحقق"]       = df_ops_o["المتحقق"].apply(safe_float)
 
                 def calc_pct_o(row):
-                    t = row["المستهدف 2026"]
-                    a = row["المتحقق"]
+                    t = safe_float(row["المستهدف 2026"])
+                    a = safe_float(row["المتحقق"])
                     return round((a / t) * 100, 1) if t else 0.0
                 df_ops_o["النسبة"] = df_ops_o.apply(calc_pct_o, axis=1)
 
@@ -1826,16 +1869,42 @@ def owner_view(sh, user_name, my_initiatives_str):
                         return int(f) if f == int(f) else round(f, 2)
                     except:
                         return v
-                df_ops_o["المستهدف 2026"] = df_ops_o["المستهدف 2026"].apply(fmt_n)
-                df_ops_o["المتحقق"]       = df_ops_o["المتحقق"].apply(fmt_n)
+                df_ops_o = df_ops_o.copy()
+                df_ops_o["المستهدف 2026"] = df_ops_o["المستهدف 2026"].apply(fmt_n).astype(str)
+                df_ops_o["المتحقق"]       = df_ops_o["المتحقق"].apply(fmt_n).astype(str)
+
+                # تلوين حسب الاتجاه
+                def color_row_o(row):
+                    styles = [""] * len(row)
+                    ci = list(row.index).index("النسبة") if "النسبة" in row.index else -1
+                    if ci < 0:
+                        return styles
+                    v = safe_float(row["النسبة"])
+                    d = str(row.get("الاتجاه","تصاعدي")).strip()
+                    good = (v >= 100) if d == "تصاعدي" else (v <= 100)
+                    mid  = (50 <= v < 100) if d == "تصاعدي" else (100 < v <= 150)
+                    if good:
+                        styles[ci] = "color: #27ae60; font-weight: bold"
+                    elif mid:
+                        styles[ci] = "color: #d35400; font-weight: bold"
+                    else:
+                        styles[ci] = "color: #c0392b; font-weight: bold; background-color: #fde8e8"
+                    return styles
+
+                cols_o = [c for c in ["رقم المؤشر","المؤشر","النوع","الاتجاه",
+                          "المستهدف 2026","المتحقق","النسبة","ملاحظات"]
+                          if c in df_ops_o.columns]
+                styled_o = df_ops_o[cols_o].style.apply(color_row_o, axis=1)
 
                 # جدول للاطلاع
                 st.dataframe(
-                    df_ops_o[["رقم المؤشر", "المؤشر", "المستهدف 2026", "المتحقق", "النسبة", "ملاحظات"]],
+                    styled_o,
                     hide_index=True, use_container_width=True,
                     column_config={
                         "رقم المؤشر":    st.column_config.NumberColumn("#", width="small", format="%d"),
                         "المؤشر":        st.column_config.TextColumn("المؤشر", width="large"),
+                        "النوع":         st.column_config.TextColumn("النوع", width="small"),
+                        "الاتجاه":       st.column_config.TextColumn("الاتجاه", width="small"),
                         "المستهدف 2026": st.column_config.TextColumn("المستهدف 2026"),
                         "المتحقق":       st.column_config.TextColumn("المتحقق"),
                         "النسبة":        st.column_config.NumberColumn("النسبة %", format="%.1f%%"),
