@@ -1227,15 +1227,25 @@ def admin_view(sh, user_name):
 
             styled = df_show.style.applymap(color_pct, subset=["النسبة"])
 
+            # تنسيق الأرقام — إزالة الأصفار الزائدة
+            def fmt_num(v):
+                try:
+                    f = float(v)
+                    return int(f) if f == int(f) else round(f, 2)
+                except:
+                    return v
+            df_show["المستهدف 2026"] = df_show["المستهدف 2026"].apply(fmt_num)
+            df_show["المتحقق"]       = df_show["المتحقق"].apply(fmt_num)
+
             st.dataframe(
                 styled,
                 hide_index=True,
                 use_container_width=True,
                 column_config={
-                    "رقم المؤشر":    st.column_config.NumberColumn("#",    width="small"),
+                    "رقم المؤشر":    st.column_config.NumberColumn("#",    width="small", format="%d"),
                     "المؤشر":        st.column_config.TextColumn("المؤشر", width="large"),
-                    "المستهدف 2026": st.column_config.NumberColumn("المستهدف 2026"),
-                    "المتحقق":       st.column_config.NumberColumn("المتحقق"),
+                    "المستهدف 2026": st.column_config.TextColumn("المستهدف 2026"),
+                    "المتحقق":       st.column_config.TextColumn("المتحقق"),
                     "النسبة":        st.column_config.NumberColumn("النسبة %", format="%.1f%%"),
                     "ملاحظات":       st.column_config.TextColumn("ملاحظات", width="medium"),
                 },
@@ -1244,7 +1254,7 @@ def admin_view(sh, user_name):
             # ── مخطط شريطي ──
             st.markdown("#### 📊 مقارنة بصرية")
             chart_df = df_show.copy()
-            names  = [str(int(r["رقم المؤشر"])) + ". " + str(r["المؤشر"])[:30]
+            names  = [str(int(r["رقم المؤشر"])) + ". " + str(r["المؤشر"])
                       for _, r in chart_df.iterrows()]
             pcts   = chart_df["النسبة"].tolist()
             clrs   = []
@@ -1262,59 +1272,70 @@ def admin_view(sh, user_name):
             ))
             fig_ops.add_vline(x=100, line_dash="dash", line_color="#27ae60",
                               annotation_text="المستهدف 100%")
+            # عناوين كاملة في المخطط
+            max_name_len = max((len(n) for n in names), default=20)
+            left_margin  = min(max_name_len * 7, 380)
+
             fig_ops.update_layout(
                 xaxis=dict(range=[0, max(max(pcts, default=0)*1.2, 120)],
                            title="نسبة الإنجاز %", showgrid=True, gridcolor="#f0f0f0"),
-                yaxis=dict(autorange="reversed"),
+                yaxis=dict(autorange="reversed", tickfont=dict(size=11)),
                 plot_bgcolor="white", paper_bgcolor="white",
-                margin=dict(t=20, b=20, l=20, r=80),
-                height=max(250, len(chart_df) * 42),
+                margin=dict(t=20, b=40, l=left_margin, r=90),
+                height=max(300, len(chart_df) * 52),
                 showlegend=False,
             )
             st.plotly_chart(fig_ops, use_container_width=True, key="ops_bar_chart")
 
-            # ── تحديث البيانات ──
+            # ── تحديث البيانات — متاح لـ f.qahtany فقط أو Admin ──
             st.markdown("---")
-            st.markdown("#### ✏️ تحديث قيمة المتحقق")
-            col_sel, col_val, col_note = st.columns([3, 2, 3])
-            with col_sel:
-                sel_ops = st.selectbox(
-                    "اختر المؤشر:",
-                    df_ops["المؤشر"].tolist(),
-                    key="ops_select",
-                )
-            if sel_ops:
-                ops_row = df_ops[df_ops["المؤشر"] == sel_ops].iloc[0]
-                with col_val:
-                    new_actual = st.number_input(
-                        "القيمة المتحققة",
-                        value=float(ops_row["المتحقق"]),
-                        key="ops_actual",
+            _ops_user = st.session_state["user_info"].get("username", "").strip()
+            _ops_role = str(st.session_state["user_info"].get("role", "")).strip().title()
+            _can_edit_ops = (_ops_user == "f.qahtany" or _ops_role == "Admin")
+
+            if _can_edit_ops:
+                st.markdown("#### ✏️ تحديث قيمة المتحقق")
+                col_sel, col_val, col_note = st.columns([3, 2, 3])
+                with col_sel:
+                    sel_ops = st.selectbox(
+                        "اختر المؤشر:",
+                        df_ops["المؤشر"].tolist(),
+                        key="ops_select",
                     )
-                with col_note:
-                    ops_note = st.text_input("ملاحظة", value=str(ops_row["ملاحظات"]), key="ops_note")
-                if st.button("💾 حفظ التحديث", use_container_width=True, key="ops_save"):
-                    with st.spinner("جاري الحفظ..."):
-                        try:
-                            ws_ops2 = sh.worksheet("Operational_KPIs")
-                            df_ops2 = pd.DataFrame(ws_ops2.get_all_records())
-                            mask_ops = df_ops2["المؤشر"] == sel_ops
-                            if mask_ops.any():
-                                df_ops2.loc[mask_ops, "المتحقق"]  = new_actual
-                                df_ops2.loc[mask_ops, "ملاحظات"]  = ops_note
-                                t_val = safe_float(df_ops2.loc[mask_ops, "المستهدف 2026"].values[0])
-                                pct_new = round((new_actual / t_val) * 100, 1) if t_val else 0
-                                df_ops2.loc[mask_ops, "النسبة"] = pct_new
-                                cdf_ops = clean_df_for_gspread(df_ops2)
-                                ws_ops2.update(
-                                    values=[cdf_ops.columns.tolist()] + cdf_ops.values.tolist(),
-                                    range_name="A1",
-                                )
-                                st.success("✅ تم الحفظ! النسبة الجديدة: " + str(pct_new) + "%")
-                                time.sleep(1)
-                                st.rerun()
-                        except Exception as e:
-                            st.error("خطأ: " + str(e))
+                if sel_ops:
+                    ops_row = df_ops[df_ops["المؤشر"] == sel_ops].iloc[0]
+                    with col_val:
+                        new_actual = st.number_input(
+                            "القيمة المتحققة",
+                            value=float(ops_row["المتحقق"]),
+                            key="ops_actual",
+                        )
+                    with col_note:
+                        ops_note = st.text_input("ملاحظة", value=str(ops_row["ملاحظات"]), key="ops_note")
+                    if st.button("💾 حفظ التحديث", use_container_width=True, key="ops_save"):
+                        with st.spinner("جاري الحفظ..."):
+                            try:
+                                ws_ops2 = sh.worksheet("Operational_KPIs")
+                                df_ops2 = pd.DataFrame(ws_ops2.get_all_records())
+                                mask_ops = df_ops2["المؤشر"] == sel_ops
+                                if mask_ops.any():
+                                    df_ops2.loc[mask_ops, "المتحقق"]  = new_actual
+                                    df_ops2.loc[mask_ops, "ملاحظات"]  = ops_note
+                                    t_val = safe_float(df_ops2.loc[mask_ops, "المستهدف 2026"].values[0])
+                                    pct_new = round((new_actual / t_val) * 100, 1) if t_val else 0
+                                    df_ops2.loc[mask_ops, "النسبة"] = pct_new
+                                    cdf_ops = clean_df_for_gspread(df_ops2)
+                                    ws_ops2.update(
+                                        values=[cdf_ops.columns.tolist()] + cdf_ops.values.tolist(),
+                                        range_name="A1",
+                                    )
+                                    st.success("✅ تم الحفظ! النسبة الجديدة: " + str(pct_new) + "%")
+                                    time.sleep(1)
+                                    st.rerun()
+                            except Exception as e:
+                                st.error("خطأ: " + str(e))
+            else:
+                st.info("👁️ عرض للاطلاع فقط — تحديث البيانات متاح لمسؤول العمليات.")
 
     elif view == "🏥 صحة المبادرات":
         show_health_dashboard(df_acts)
@@ -1555,7 +1576,13 @@ def owner_view(sh, user_name, my_initiatives_str):
 
     view = st.selectbox(
         "القسم:",
-        ["📋 تحديث الأنشطة", "✏️ تحديث مؤشراتي", "🏥 صحة مبادراتي", "📈 اتجاه مؤشراتي", "📊 كافة المؤشرات", "💬 محادثاتي"],
+        (
+            ["📋 تحديث الأنشطة", "✏️ تحديث مؤشراتي", "⚙️ المؤشرات التشغيلية",
+             "🏥 صحة مبادراتي", "📈 اتجاه مؤشراتي", "📊 كافة المؤشرات", "💬 محادثاتي"]
+            if st.session_state["user_info"].get("username","").strip() == "f.qahtany"
+            else ["📋 تحديث الأنشطة", "✏️ تحديث مؤشراتي",
+                  "🏥 صحة مبادراتي", "📈 اتجاه مؤشراتي", "📊 كافة المؤشرات", "💬 محادثاتي"]
+        ),
         key="owner_view_select",
     )
     st.markdown("---")
@@ -1768,6 +1795,98 @@ def owner_view(sh, user_name, my_initiatives_str):
     elif view == "📊 كافة المؤشرات":
         st.markdown("### 📊 لوحة المؤشرات العامة (للاطلاع)")
         display_kpi_layout(df_kpi, ctx="_own_tab5")
+
+
+    elif view == "⚙️ المؤشرات التشغيلية":
+        st.markdown("### ⚙️ تحديث المؤشرات التشغيلية")
+        _ou = st.session_state["user_info"].get("username","").strip()
+        if _ou != "f.qahtany":
+            st.warning("هذا القسم مخصص لمسؤول العمليات.")
+        else:
+            try:
+                ws_ops_o = sh.worksheet("Operational_KPIs")
+                df_ops_o = pd.DataFrame(ws_ops_o.get_all_records())
+            except Exception as e_ops:
+                st.error("خطأ في تحميل البيانات: " + str(e_ops))
+                df_ops_o = pd.DataFrame()
+
+            if not df_ops_o.empty:
+                df_ops_o["المستهدف 2026"] = df_ops_o["المستهدف 2026"].apply(safe_float)
+                df_ops_o["المتحقق"]       = df_ops_o["المتحقق"].apply(safe_float)
+
+                def calc_pct_o(row):
+                    t = row["المستهدف 2026"]
+                    a = row["المتحقق"]
+                    return round((a / t) * 100, 1) if t else 0.0
+                df_ops_o["النسبة"] = df_ops_o.apply(calc_pct_o, axis=1)
+
+                def fmt_n(v):
+                    try:
+                        f = float(v)
+                        return int(f) if f == int(f) else round(f, 2)
+                    except:
+                        return v
+                df_ops_o["المستهدف 2026"] = df_ops_o["المستهدف 2026"].apply(fmt_n)
+                df_ops_o["المتحقق"]       = df_ops_o["المتحقق"].apply(fmt_n)
+
+                # جدول للاطلاع
+                st.dataframe(
+                    df_ops_o[["رقم المؤشر", "المؤشر", "المستهدف 2026", "المتحقق", "النسبة", "ملاحظات"]],
+                    hide_index=True, use_container_width=True,
+                    column_config={
+                        "رقم المؤشر":    st.column_config.NumberColumn("#", width="small", format="%d"),
+                        "المؤشر":        st.column_config.TextColumn("المؤشر", width="large"),
+                        "المستهدف 2026": st.column_config.TextColumn("المستهدف 2026"),
+                        "المتحقق":       st.column_config.TextColumn("المتحقق"),
+                        "النسبة":        st.column_config.NumberColumn("النسبة %", format="%.1f%%"),
+                        "ملاحظات":       st.column_config.TextColumn("ملاحظات", width="medium"),
+                    },
+                )
+
+                st.markdown("---")
+                st.markdown("#### ✏️ تحديث قيمة المتحقق")
+                sel_ops_o = st.selectbox(
+                    "اختر المؤشر:",
+                    df_ops_o["المؤشر"].tolist(),
+                    key="ops_owner_select",
+                )
+                if sel_ops_o:
+                    ops_row_o = df_ops_o[df_ops_o["المؤشر"] == sel_ops_o].iloc[0]
+                    col_v, col_n = st.columns([2, 3])
+                    with col_v:
+                        new_act_o = st.number_input(
+                            "القيمة المتحققة",
+                            value=float(ops_row_o["المتحقق"]),
+                            key="ops_owner_actual",
+                        )
+                    with col_n:
+                        note_o = st.text_input(
+                            "ملاحظة",
+                            value=str(ops_row_o["ملاحظات"]),
+                            key="ops_owner_note",
+                        )
+                    if st.button("💾 حفظ التحديث", use_container_width=True, key="ops_owner_save"):
+                        with st.spinner("جاري الحفظ..."):
+                            try:
+                                ws_o2  = sh.worksheet("Operational_KPIs")
+                                df_o2  = pd.DataFrame(ws_o2.get_all_records())
+                                msk_o  = df_o2["المؤشر"] == sel_ops_o
+                                if msk_o.any():
+                                    df_o2.loc[msk_o, "المتحقق"]  = new_act_o
+                                    df_o2.loc[msk_o, "ملاحظات"]  = note_o
+                                    t_o = safe_float(df_o2.loc[msk_o, "المستهدف 2026"].values[0])
+                                    pct_o = round((new_act_o / t_o) * 100, 1) if t_o else 0
+                                    df_o2.loc[msk_o, "النسبة"] = pct_o
+                                    cdf_o = clean_df_for_gspread(df_o2)
+                                    ws_o2.update(
+                                        values=[cdf_o.columns.tolist()] + cdf_o.values.tolist(),
+                                        range_name="A1",
+                                    )
+                                    st.success("✅ تم الحفظ! النسبة: " + str(pct_o) + "%")
+                                    time.sleep(1)
+                                    st.rerun()
+                            except Exception as e:
+                                st.error("خطأ: " + str(e))
 
     elif view == "💬 محادثاتي":
         st.markdown("### 💬 محادثاتي مع المدير")
