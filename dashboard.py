@@ -82,6 +82,16 @@ st.markdown("""
     .health-green  { background: #eafaf1; border-right: 5px solid #27ae60; color: #1e8449; }
     .health-yellow { background: #fef9e7; border-right: 5px solid #f39c12; color: #7d6608; }
     .health-red    { background: #fde8e8; border-right: 5px solid #e74c3c; color: #7b241c; }
+
+    /* تحسين التصفّح على الجوال فقط — لا يؤثر على نسخة الكمبيوتر */
+    @media (max-width: 640px) {
+        .alert-summary-grid { grid-template-columns: repeat(2, 1fr) !important; }
+        .alert-summary-card .num { font-size: 26px; }
+        .bubble { max-width: 92%; }
+        div[data-testid="stMetricValue"] { font-size: 22px; }
+        div[data-testid="stMetricLabel"] { font-size: 15px !important; }
+        .history-box { font-size: 14px; padding: 10px; }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -113,6 +123,193 @@ def get_kpi_category(kpi_name):
         if kpi_name in [str(i).strip() for i in items]:
             return group
     return "مؤشرات أخرى"
+
+# ---------------------------------------------------------
+# 2.1 أدوات الهدف المزدوج (السنوي + التراكمي)
+# ---------------------------------------------------------
+# عمود الهدف السنوي يبقى باسم Target، ويُضاف عمود Target_Cumulative للهدف النهائي.
+KPI_CUM_COL = "Target_Cumulative"
+
+def is_percentage_kpi(unit):
+    """يحدد إن كان المؤشر من نوع نسبة (لا يُجمع تراكمياً) اعتماداً على وحدة القياس."""
+    u = str(unit).strip().lower()
+    return ("نسبة" in u) or ("%" in u) or ("percent" in u)
+
+def prepare_kpi_df(df_kpi):
+    """يضمن وجود الأعمدة المطلوبة ويحوّل الأهداف والمتحقق إلى أرقام. يُستخدم في كل الواجهات."""
+    if df_kpi is None or df_kpi.empty:
+        return df_kpi
+    if "KPI_Name" not in df_kpi.columns:
+        df_kpi["KPI_Name"] = ""
+    if "Actual" not in df_kpi.columns:
+        df_kpi["Actual"] = 0.0
+    for c in ["Admin_Comment", "Owner_Comment", "Owner", "Unit", "Direction", "Frequency"]:
+        if c not in df_kpi.columns:
+            df_kpi[c] = ""
+    if "Target" not in df_kpi.columns:
+        df_kpi["Target"] = 0.0
+    if KPI_CUM_COL not in df_kpi.columns:
+        # الهدف التراكمي غير موجود بعد → يُهيّأ فارغاً (يدخله المدير لاحقاً)
+        df_kpi[KPI_CUM_COL] = 0.0
+    df_kpi["Target"]      = df_kpi["Target"].apply(safe_float)
+    df_kpi[KPI_CUM_COL]   = df_kpi[KPI_CUM_COL].apply(safe_float)
+    df_kpi["Actual"]      = df_kpi["Actual"].apply(safe_float)
+    return df_kpi
+
+def compute_cumulative_actual(kpi_name, unit, current_actual, df_history):
+    """
+    المتحقق التراكمي حسب نوع المؤشر:
+    - نسبة/مستوى: آخر قيمة مقاسة (لا تُجمع).
+    - عدد: مجموع آخر قيمة مسجّلة لكل سنة من السجل التاريخي، مع تحديث السنة الحالية بالقيمة الراهنة.
+    آمن ضد الأخطاء: يرجع المتحقق الحالي عند أي تعذّر.
+    """
+    cur = safe_float(current_actual)
+    try:
+        if is_percentage_kpi(unit):
+            return cur
+        if df_history is None or df_history.empty:
+            return cur
+        h = df_history[
+            df_history["KPI_Name"].astype(str).str.strip() == str(kpi_name).strip()
+        ].copy()
+        if h.empty:
+            return cur
+        h["_d"] = pd.to_datetime(h["Date"], errors="coerce")
+        h = h.dropna(subset=["_d"])
+        if h.empty:
+            return cur
+        h["_year"]   = h["_d"].dt.year
+        yearly       = h.sort_values("_d").groupby("_year").tail(1).copy()
+        yearly["_v"] = yearly["Actual"].apply(safe_float)
+        cur_year     = datetime.now().year
+        total        = float(yearly["_v"].sum())
+        if cur_year in list(yearly["_year"].values):
+            cy_last = float(yearly[yearly["_year"] == cur_year]["_v"].iloc[-1])
+            total   = total - cy_last + cur
+        else:
+            total   = total + cur
+        return total
+    except Exception:
+        return cur
+
+def parse_unit(unit):
+    """يفصل وحدة القياس عن التكرار في حقل Unit بصيغة '<النوع> - <التكرار>'."""
+    u = str(unit).strip()
+    if " - " in u:
+        a, b = u.split(" - ", 1)
+        return a.strip(), b.strip()
+    return u, ""
+
+def fmt_kpi_value(val, unit):
+    """تنسيق موحّد: النسب تُعرض مع علامة %، والأعداد كما هي.
+    ملاحظة: ورقة KPIs تخزّن النسب كأرقام كاملة (85 = 85%) لا ككسور، فلا ضرب ×100."""
+    v = safe_float(val)
+    if is_percentage_kpi(unit):
+        disp = int(v) if v == int(v) else round(v, 1)
+        return str(disp) + "%"
+    return str(int(v) if v == int(v) else round(v, 2))
+
+def update_kpi_cells(ws, kpi_name, updates):
+    """
+    تحديث خلايا محددة فقط لصف مؤشر واحد (بدل إعادة كتابة الورقة كاملة) — يمنع
+    ضياع تعديلات الملاك عند الحفظ المتزامن. يتطلب وجود الأعمدة في رأس الورقة.
+    updates: قاموس {اسم_العمود: القيمة}
+    """
+    all_vals = ws.get_all_values()
+    if not all_vals:
+        return False
+    header = all_vals[0]
+    if "KPI_Name" not in header:
+        return False
+    name_idx = header.index("KPI_Name")
+    target_row = None
+    for i, row in enumerate(all_vals[1:], start=2):
+        if len(row) > name_idx and str(row[name_idx]).strip() == str(kpi_name).strip():
+            target_row = i
+            break
+    if target_row is None:
+        return False
+    cells = []
+    for col_name, val in updates.items():
+        if col_name in header:
+            cells.append(gspread.Cell(target_row, header.index(col_name) + 1, val))
+    if cells:
+        ws.update_cells(cells)
+    return True
+
+def plot_dual_target_bars(row, cum_actual, ctx=""):
+    """رسم الأعمدة الأربعة لمؤشر واحد: المتحقق/المستهدف السنوي + المتحقق/الهدف النهائي."""
+    unit = str(row.get("Unit", "")).strip()
+    a_act = safe_float(row.get("Actual", 0))
+    a_tgt = safe_float(row.get("Target", 0))
+    c_tgt = safe_float(row.get(KPI_CUM_COL, 0))
+    c_act = safe_float(cum_actual)
+    labels = ["المتحقق السنوي", "المستهدف السنوي", "المتحقق التراكمي", "الهدف النهائي"]
+    vals   = [a_act, a_tgt, c_act, c_tgt]
+    texts  = [fmt_kpi_value(v, unit) for v in vals]
+    colors = ["#1f77b4", "#adc7e8", "#16a085", "#d4ac0d"]
+    fig = go.Figure(go.Bar(
+        x=labels, y=vals, marker_color=colors,
+        text=texts, textposition="auto", width=0.6,
+    ))
+    fig.update_layout(
+        barmode="group", bargap=0.35,
+        yaxis=dict(showgrid=True, gridcolor="lightgrey"),
+        margin=dict(t=30, b=40, l=20, r=20), height=320,
+        showlegend=False,
+    )
+    sk = (str(row.get("KPI_Name", "")) + ctx).replace(" ", "_").replace("/", "_")[:80]
+    st.plotly_chart(fig, use_container_width=True, key="dual_" + sk)
+
+def kpi_meta_caption(row, df_history=None):
+    """سطر بيانات تعريفية: المالك، تكرار القياس، تاريخ آخر تحديث."""
+    owner = str(row.get("Owner", "")).strip() or "غير محدد"
+    freq  = str(row.get("Frequency", "")).strip()
+    if not freq:
+        # لا يوجد عمود Frequency منفصل — التكرار مدمج في Unit بصيغة 'النوع - التكرار'
+        _, freq = parse_unit(row.get("Unit", ""))
+    freq = freq or "غير محدد"
+    last  = "—"
+    try:
+        if df_history is not None and not df_history.empty:
+            h = df_history[
+                df_history["KPI_Name"].astype(str).str.strip()
+                == str(row.get("KPI_Name", "")).strip()
+            ]
+            if not h.empty:
+                last = str(h["Date"].iloc[-1])
+    except Exception:
+        pass
+    return "👤 المالك: " + owner + "  •  🔁 التكرار: " + freq + "  •  🕓 آخر تحديث: " + last
+
+def show_kpi_scorecard(df_kpi, title="ملخّص المؤشرات"):
+    """لوحة ملخّص مختصرة أعلى الواجهة: على المسار / متعثّر / حرج (حسب الاتجاه)."""
+    if df_kpi is None or df_kpi.empty:
+        return
+    on_track = at_risk = off_track = 0
+    for _, r in df_kpi.iterrows():
+        t = safe_float(r.get("Target", 0))
+        a = safe_float(r.get("Actual", 0))
+        d = str(r.get("Direction", "تصاعدي")).strip()
+        if t == 0:
+            continue
+        pct = (a / t) * 100 if d != "تنازلي" else (t / a) * 100 if a else 0
+        if pct >= 100:
+            on_track += 1
+        elif pct >= 60:
+            at_risk += 1
+        else:
+            off_track += 1
+    total = len(df_kpi)
+    st.markdown(
+        "<div class='alert-summary-grid'>"
+        "<div class='alert-summary-card s-blue'><div class='num'>"   + str(total)     + "</div><div class='lbl'>إجمالي المؤشرات</div></div>"
+        "<div class='alert-summary-card s-gray'><div class='num'>"   + str(on_track)  + "</div><div class='lbl'>على المسار ✓</div></div>"
+        "<div class='alert-summary-card s-orange'><div class='num'>" + str(at_risk)   + "</div><div class='lbl'>متعثّر</div></div>"
+        "<div class='alert-summary-card s-red'><div class='num'>"    + str(off_track) + "</div><div class='lbl'>حرج</div></div>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
 # ---------------------------------------------------------
 # 3. اتصال Google Sheets
@@ -1070,11 +1267,7 @@ def admin_view(sh, user_name):
     try:
         ws_kpi = sh.worksheet("KPIs")
         df_kpi = pd.DataFrame(ws_kpi.get_all_records())
-        for c in ["Admin_Comment", "Owner_Comment", "Owner"]:
-            if c not in df_kpi.columns:
-                df_kpi[c] = ""
-        df_kpi["Target"] = df_kpi["Target"].apply(safe_float)
-        df_kpi["Actual"] = df_kpi["Actual"].apply(safe_float)
+        df_kpi = prepare_kpi_df(df_kpi)
     except Exception as e:
         st.error("خطأ في تحميل المؤشرات: " + str(e))
         df_kpi = None
@@ -1089,6 +1282,10 @@ def admin_view(sh, user_name):
         ])
 
     show_alerts_panel(df_acts, df_kpi)
+
+    if df_kpi is not None and not df_kpi.empty:
+        st.markdown("#### 📊 ملخّص المؤشرات")
+        show_kpi_scorecard(df_kpi)
 
     view = st.selectbox(
         "القسم:",
@@ -1147,7 +1344,7 @@ def admin_view(sh, user_name):
                             range_name="A1",
                         )
                         st.success("✅ تم الحفظ!")
-                        time.sleep(1)
+                        time.sleep(0.4)
                         st.rerun()
                     else:
                         st.info("لم تُكتب أي ملاحظات.")
@@ -1179,7 +1376,9 @@ def admin_view(sh, user_name):
         else:
             display_kpi_layout(df_kpi, ctx="_adm_tab2")
             st.markdown("---")
-            st.markdown("#### ✏️ تحديث البيانات والملاحظات")
+            st.markdown("#### ✏️ تحديث الأهداف والملاحظات")
+            st.caption("المدير يُدخل الهدف السنوي (Target) والهدف النهائي/التراكمي (Target_Cumulative). "
+                       "المالك يُدخل المتحقق فقط من واجهته.")
             fc = st.selectbox("📂 فلترة:", ["الكل"] + list(KPI_GROUPS.keys()), key="kpi_filt")
             df_kpi["Category"] = df_kpi["KPI_Name"].apply(get_kpi_category)
             dfe = df_kpi[df_kpi["Category"] == fc].copy() if fc != "الكل" else df_kpi.copy()
@@ -1188,7 +1387,8 @@ def admin_view(sh, user_name):
                 dfe, num_rows="fixed", use_container_width=True, key="kpi_ed_adm",
                 column_config={
                     "KPI_Name":       st.column_config.TextColumn("المؤشر", width="large"),
-                    "Target":         st.column_config.NumberColumn("المستهدف", required=True),
+                    "Target":         st.column_config.NumberColumn("🎯 المستهدف السنوي", required=True),
+                    KPI_CUM_COL:      st.column_config.NumberColumn("🏁 الهدف النهائي (التراكمي)"),
                     "Actual":         st.column_config.NumberColumn("الفعلي"),
                     "Owner":          st.column_config.TextColumn("المسؤول"),
                     "Owner_Comment":  st.column_config.TextColumn("ملاحظات المالك", width="medium"),
@@ -1207,6 +1407,10 @@ def admin_view(sh, user_name):
                             if float(row["Target"]) != float(df_kpi.loc[mask, "Target"].values[0]):
                                 df_kpi.loc[mask, "Target"] = row["Target"]
                                 changed = True
+                            old_cum = float(df_kpi.loc[mask, KPI_CUM_COL].values[0])
+                            if float(safe_float(row.get(KPI_CUM_COL, 0))) != old_cum:
+                                df_kpi.loc[mask, KPI_CUM_COL] = safe_float(row.get(KPI_CUM_COL, 0))
+                                changed = True
                             nn = str(row["New_Admin_Note"]).strip()
                             if nn:
                                 old_note = df_kpi.loc[mask, "Admin_Comment"].values[0]
@@ -1220,7 +1424,7 @@ def admin_view(sh, user_name):
                             range_name="A1",
                         )
                         st.success("✅ تم الحفظ!")
-                        time.sleep(1)
+                        time.sleep(0.4)
                         st.rerun()
                     else:
                         st.info("لا توجد تغييرات.")
@@ -1472,7 +1676,7 @@ def admin_view(sh, user_name):
                                 save_ops_snapshot(sel_hist_ops, m_act, m_tgt2, user_name,
                                                   m_note or "إدخال يدوي")
                                 st.success("✅ تم الحفظ!")
-                                time.sleep(1)
+                                time.sleep(0.4)
                                 st.rerun()
 
             # ── تحديث البيانات — متاح لـ f.qahtany فقط أو Admin ──
@@ -1518,7 +1722,7 @@ def admin_view(sh, user_name):
                                         range_name="A1",
                                     )
                                     st.success("✅ تم الحفظ! النسبة الجديدة: " + str(pct_new) + "%")
-                                    time.sleep(1)
+                                    time.sleep(0.4)
                                     st.rerun()
                             except Exception as e:
                                 st.error("خطأ: " + str(e))
@@ -1544,6 +1748,13 @@ def admin_view(sh, user_name):
                     unit = ki["Unit"].values[0]      if not ki.empty and "Unit"      in ki.columns else ""
                     drx  = ki["Direction"].values[0] if not ki.empty and "Direction" in ki.columns else "تصاعدي"
                     tgt  = ki["Target"].values[0]    if not ki.empty else 0.0
+                    if not ki.empty:
+                        krow = ki.iloc[0]
+                        st.caption(kpi_meta_caption(krow, df_history))
+                        cum_a = compute_cumulative_actual(sel_kpi, unit, krow.get("Actual", 0), df_history)
+                        st.markdown("##### 🎯 الأهداف: السنوي مقابل النهائي")
+                        plot_dual_target_bars(krow, cum_a, ctx="_adm_dual")
+                        st.markdown("---")
                     kh   = df_history[
                         df_history["KPI_Name"].astype(str).str.strip() == sel_kpi.strip()
                     ].sort_values("Date")
@@ -1553,6 +1764,8 @@ def admin_view(sh, user_name):
                         m2.metric("آخر قيمة",    str(round(float(kh["Actual"].iloc[-1]), 1)))
                         m3.metric("أعلى قيمة",   str(round(float(kh["Actual"].max()), 1)))
                         m4.metric("أدنى قيمة",   str(round(float(kh["Actual"].min()), 1)))
+                    else:
+                        st.info("ℹ️ لا يوجد سجل تاريخي لهذا المؤشر بعد. سيظهر منحنى الاتجاه بعد أول إدخال للمتحقق.")
                     plot_kpi_trend(df_history, sel_kpi, drx, unit, ctx="_adm3")
                     st.markdown("---")
                     st.markdown("##### ➕ إضافة قيمة تاريخية يدوية")
@@ -1572,7 +1785,7 @@ def admin_view(sh, user_name):
                                 ws_h.append_row([sel_kpi, str(md), ma, mt, user_name, note_val])
                                 load_kpi_history.clear()
                                 st.success("✅ تم الحفظ!")
-                                time.sleep(1)
+                                time.sleep(0.4)
                                 st.rerun()
                             except Exception as e:
                                 st.error("خطأ: " + str(e))
@@ -1603,7 +1816,7 @@ def admin_view(sh, user_name):
                         n = save_all_kpis_snapshot(df_kpi, user_name)
                     if n > 0:
                         st.success("✅ تم تسجيل " + str(n) + " مؤشر بتاريخ " + date.today().isoformat())
-                        time.sleep(1)
+                        time.sleep(0.4)
                         st.rerun()
                     else:
                         st.info("جميع مؤشرات اليوم مُسجَّلة بالفعل.")
@@ -1751,16 +1964,21 @@ def owner_view(sh, user_name, my_initiatives_str):
 
         ws_kpi  = sh.worksheet("KPIs")
         df_kpi  = pd.DataFrame(ws_kpi.get_all_records())
-        for c in ["Admin_Comment", "Owner_Comment", "Owner"]:
-            if c not in df_kpi.columns:
-                df_kpi[c] = ""
-        df_kpi["Target"] = df_kpi["Target"].apply(safe_float)
-        df_kpi["Actual"] = df_kpi["Actual"].apply(safe_float)
+        df_kpi  = prepare_kpi_df(df_kpi)
     except Exception as e:
         st.error("خطأ في تحميل البيانات: " + str(e))
         return
 
     show_owner_alerts(all_data, my_list)
+
+    _ocu = st.session_state["user_info"].get("username", "").strip()
+    my_kpis_top = df_kpi[
+        (df_kpi["Owner"].astype(str).str.strip() == _ocu) |
+        (df_kpi["Owner"].astype(str).str.strip() == user_name.strip())
+    ] if df_kpi is not None and not df_kpi.empty else pd.DataFrame()
+    if not my_kpis_top.empty:
+        st.markdown("#### 📊 ملخّص مؤشراتي")
+        show_kpi_scorecard(my_kpis_top)
 
     view = st.selectbox(
         "القسم:",
@@ -2031,7 +2249,7 @@ def owner_view(sh, user_name, my_initiatives_str):
                                         if cell:
                                             ws_acts.update_cell(cell.row, cell.col, nv)
                                             st.success("تم!")
-                                            time.sleep(1)
+                                            time.sleep(0.4)
                                             st.rerun()
                                     except Exception as e:
                                         st.error(str(e))
@@ -2046,7 +2264,7 @@ def owner_view(sh, user_name, my_initiatives_str):
                                     if cell:
                                         ws_acts.delete_rows(cell.row)
                                         st.success("تم الحذف.")
-                                        time.sleep(1)
+                                        time.sleep(0.4)
                                         st.rerun()
                                 except Exception as e:
                                     st.error(str(e))
@@ -2104,28 +2322,36 @@ def owner_view(sh, user_name, my_initiatives_str):
                                         range_name="A1",
                                     )
                                     st.success("✅ تم الحفظ!")
-                                    time.sleep(1)
+                                    time.sleep(0.4)
                                     st.rerun()
                             except Exception as e:
                                 st.error("خطأ: " + str(e))
 
     elif view == "✏️ تحديث مؤشراتي":
         st.markdown("### 📈 تحديث مؤشرات الأداء المسندة لي")
+        st.caption("الأهداف (السنوي والنهائي) يحدّدها المدير. أنت تُدخل المتحقق فقط.")
         cu = st.session_state["user_info"].get("username", "").strip()
         my_kpis = df_kpi[
             (df_kpi["Owner"].astype(str).str.strip() == cu) |
             (df_kpi["Owner"].astype(str).str.strip() == user_name.strip())
         ]
         if my_kpis.empty:
-            st.info("لا توجد مؤشرات مرتبطة بحسابك.")
+            st.info("ℹ️ لم تُسند إليك مؤشرات بعد. تواصل مع مدير النظام لإسناد مؤشراتك.")
         else:
+            df_hist_o = load_kpi_history(SHEET_ID)
             sk2 = st.selectbox("اختر المؤشر", my_kpis["KPI_Name"].unique())
             if sk2:
-                kr = my_kpis[my_kpis["KPI_Name"] == sk2].iloc[0]
-                m1, m2, m3 = st.columns(3)
-                m1.metric("المستهدف",       kr["Target"])
-                m2.metric("المتحقق الحالي", kr["Actual"])
-                m3.metric("الوحدة",         kr.get("Unit", "-"))
+                kr   = my_kpis[my_kpis["KPI_Name"] == sk2].iloc[0]
+                unit = str(kr.get("Unit", "")).strip()
+                unit_type, _ = parse_unit(unit)
+                st.caption(kpi_meta_caption(kr, df_hist_o))
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("🎯 المستهدف السنوي", fmt_kpi_value(kr["Target"], unit))
+                m2.metric("🏁 الهدف النهائي",   fmt_kpi_value(kr.get(KPI_CUM_COL, 0), unit))
+                m3.metric("📈 المتحقق الحالي",  fmt_kpi_value(kr["Actual"], unit))
+                m4.metric("الوحدة",            unit_type or "-")
+                cum_a = compute_cumulative_actual(sk2, unit, kr.get("Actual", 0), df_hist_o)
+                plot_dual_target_bars(kr, cum_a, ctx="_own_dual")
                 ac_kr = str(kr.get("Admin_Comment", "")).strip()
                 if ac_kr:
                     st.markdown(
@@ -2143,27 +2369,27 @@ def owner_view(sh, user_name, my_initiatives_str):
                     nn3 = st.text_area("أضف ملاحظة جديدة:")
                     if st.form_submit_button("💾 حفظ تحديث المؤشر"):
                         try:
-                            sh3  = get_sheet_connection()
-                            ws3  = sh3.worksheet("KPIs")
-                            df3  = pd.DataFrame(ws3.get_all_records())
-                            if "Owner_Comment" not in df3.columns:
-                                df3["Owner_Comment"] = ""
-                            mask3 = df3["KPI_Name"] == sk2
-                            if mask3.any():
-                                fc3 = append_timestamped_comment(pn2, nn3)
-                                df3.loc[mask3, "Actual"]        = na2
-                                df3.loc[mask3, "Owner_Comment"] = fc3
-                                cdf3 = clean_df_for_gspread(df3)
-                                ws3.update(
-                                    values=[cdf3.columns.tolist()] + cdf3.values.tolist(),
-                                    range_name="A1",
-                                )
-                                tgt3  = safe_float(df3.loc[mask3, "Target"].values[0])
+                            sh3 = get_sheet_connection()
+                            ws3 = sh3.worksheet("KPIs")
+                            # قراءة حديثة للتعليق الحالي لتفادي الكتابة فوق تعليق متزامن
+                            fresh = pd.DataFrame(ws3.get_all_records())
+                            cur_comment = pn2
+                            if not fresh.empty and "KPI_Name" in fresh.columns:
+                                fm = fresh[fresh["KPI_Name"].astype(str).str.strip() == sk2.strip()]
+                                if not fm.empty and "Owner_Comment" in fm.columns:
+                                    cur_comment = str(fm["Owner_Comment"].values[0])
+                            fc3 = append_timestamped_comment(cur_comment, nn3) if nn3.strip() else cur_comment
+                            # تحديث على مستوى الخلية فقط (المتحقق + الملاحظة) — يمنع ضياع تعديلات الملاك المتزامنة
+                            ok = update_kpi_cells(ws3, sk2, {"Actual": na2, "Owner_Comment": fc3})
+                            if ok:
+                                tgt3  = safe_float(kr["Target"])
                                 note3 = nn3[:80] if nn3 else "تحديث تلقائي"
                                 save_kpi_snapshot(sk2, na2, tgt3, user_name, note3)
                                 st.success("✅ تم تحديث المؤشر وحفظه في السجل التاريخي!")
-                                time.sleep(1)
+                                time.sleep(0.4)
                                 st.rerun()
+                            else:
+                                st.error("تعذّر العثور على المؤشر في الورقة.")
                         except Exception as e:
                             st.error("خطأ: " + str(e))
 
@@ -2179,7 +2405,7 @@ def owner_view(sh, user_name, my_initiatives_str):
             (df_kpi["Owner"].astype(str).str.strip() == user_name.strip())
         ]
         if my_k3.empty:
-            st.info("لا توجد مؤشرات مرتبطة بحسابك.")
+            st.info("ℹ️ لم تُسند إليك مؤشرات بعد. تواصل مع مدير النظام لإسناد مؤشراتك.")
         else:
             df_hist3 = load_kpi_history(SHEET_ID)
             for _, kr3 in my_k3.iterrows():
@@ -2187,11 +2413,14 @@ def owner_view(sh, user_name, my_initiatives_str):
                 drx3 = str(kr3.get("Direction", "تصاعدي")).strip()
                 unt3 = str(kr3.get("Unit", "")).strip()
                 st.markdown("#### " + kn3)
+                st.caption(kpi_meta_caption(kr3, df_hist3))
                 plot_kpi_trend(df_hist3, kn3, drx3, unt3, ctx="_own3")
                 st.markdown("---")
 
     elif view == "📊 كافة المؤشرات":
         st.markdown("### 📊 لوحة المؤشرات العامة (للاطلاع)")
+        if df_kpi is not None and not df_kpi.empty:
+            show_kpi_scorecard(df_kpi)
         display_kpi_layout(df_kpi, ctx="_own_tab5")
 
 
@@ -2314,7 +2543,7 @@ def owner_view(sh, user_name, my_initiatives_str):
                                         note_o[:80] if note_o else "تحديث",
                                     )
                                     st.success("✅ تم الحفظ! النسبة: " + str(pct_o) + "%")
-                                    time.sleep(1)
+                                    time.sleep(0.4)
                                     st.rerun()
                             except Exception as e:
                                 st.error("خطأ: " + str(e))
@@ -2368,10 +2597,10 @@ def viewer_view(sh, user_name):
         ws_kpi = sh.worksheet("KPIs")
         df_kpi = pd.DataFrame(ws_kpi.get_all_records())
         if df_kpi.empty:
-            st.info("لا توجد مؤشرات.")
+            st.info("ℹ️ لا توجد مؤشرات معرّفة في النظام بعد. سيظهر هذا القسم بعد إضافة المدير للمؤشرات.")
             return
-        df_kpi["Target"] = df_kpi["Target"].apply(safe_float)
-        df_kpi["Actual"] = df_kpi["Actual"].apply(safe_float)
+        df_kpi = prepare_kpi_df(df_kpi)
+        show_kpi_scorecard(df_kpi)
         display_kpi_layout(df_kpi, ctx="_viewer")
     except Exception as e:
         st.error("خطأ: " + str(e))
@@ -2416,6 +2645,6 @@ else:
         st.error("خطأ غير متوقع: " + str(e))
 
 st.markdown(
-    '<div class="footer">System Version: 37.0 (NMCC - 2026)</div>',
+    '<div class="footer">System Version: 38.0 (NMCC - 2026)</div>',
     unsafe_allow_html=True,
 )
