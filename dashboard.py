@@ -136,14 +136,17 @@ def is_percentage_kpi(unit):
     return ("نسبة" in u) or ("%" in u) or ("percent" in u)
 
 def prepare_kpi_df(df_kpi):
-    """يضمن وجود الأعمدة المطلوبة ويحوّل الأهداف والمتحقق إلى أرقام. يُستخدم في كل الواجهات."""
+    """يضمن وجود الأعمدة المطلوبة، يحوّل الأهداف والمتحقق إلى أرقام، ويرتّب الأعمدة.
+    يُستخدم في كل الواجهات. الهدف التراكمي يوضع مباشرة بعد اسم المؤشر."""
     if df_kpi is None or df_kpi.empty:
         return df_kpi
     if "KPI_Name" not in df_kpi.columns:
         df_kpi["KPI_Name"] = ""
     if "Actual" not in df_kpi.columns:
         df_kpi["Actual"] = 0.0
-    for c in ["Admin_Comment", "Owner_Comment", "Owner", "Unit", "Direction", "Frequency"]:
+    # هذه الأعمدة موجودة أصلاً في الورقة؛ تُضاف فقط احتياطاً إن غابت (لا نضيف Frequency
+    # لأن التكرار مستخرج من Unit، تفادياً لإنشاء عمود فارغ في الورقة).
+    for c in ["Admin_Comment", "Owner_Comment", "Owner", "Unit", "Direction"]:
         if c not in df_kpi.columns:
             df_kpi[c] = ""
     if "Target" not in df_kpi.columns:
@@ -154,6 +157,10 @@ def prepare_kpi_df(df_kpi):
     df_kpi["Target"]      = df_kpi["Target"].apply(safe_float)
     df_kpi[KPI_CUM_COL]   = df_kpi[KPI_CUM_COL].apply(safe_float)
     df_kpi["Actual"]      = df_kpi["Actual"].apply(safe_float)
+    # ترتيب الأعمدة: اسم المؤشر ثم الهدف التراكمي ثم بقية الأعمدة كما هي
+    front = [c for c in ["KPI_Name", KPI_CUM_COL] if c in df_kpi.columns]
+    rest  = [c for c in df_kpi.columns if c not in front]
+    df_kpi = df_kpi[front + rest]
     return df_kpi
 
 def compute_cumulative_actual(kpi_name, unit, current_actual, df_history):
